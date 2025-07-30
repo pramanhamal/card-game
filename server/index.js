@@ -8,74 +8,100 @@ const app = express();
 app.use(cors());
 
 const server = http.createServer(app);
+
 const io = new Server(server, {
   cors: {
-    origin: "*", // Your React app's address
+    origin: "*", // Allows connections from any origin, including your Render frontend
     methods: ["GET", "POST"]
   }
 });
 
-let rooms = {};
+let rooms = {}; // This object will store all active game rooms
 
 io.on('connection', (socket) => {
   console.log(`User Connected: ${socket.id}`);
 
-  // When a player sets their name and joins the lobby
+  // When a player provides their name and enters the lobby
   socket.on('join_lobby', (playerName) => {
     socket.data.playerName = playerName;
-    socket.emit('rooms_update', rooms); // Send current rooms to the new player
+    // Send the current list of rooms to the newly connected player
+    socket.emit('rooms_update', rooms);
   });
 
-  // Create a new room
+  // When a player clicks "Create Room"
   socket.on('create_room', () => {
-    const roomId = `room-${Date.now()}`;
-    rooms[roomId] = { players: [], gameState: null };
+    // Generate a unique Room ID
+    const roomId = `room_${socket.id}`;
+    // Create the room object
+    rooms[roomId] = {
+        id: roomId,
+        players: [],
+        gameState: null // Game state will be added later
+    };
+    // Have the socket join the room
     socket.join(roomId);
+    // Add the creator as the first player
     rooms[roomId].players.push({ id: socket.id, name: socket.data.playerName });
-    socket.emit('joined_room', roomId, rooms[roomId]);
-    io.emit('rooms_update', rooms); // Update everyone in the lobby
+
+    // Send confirmation to the player that they have joined the room
+    socket.emit('joined_room', rooms[roomId]);
+    
+    // Send the updated room list to everyone in the lobby
+    io.emit('rooms_update', rooms);
+    console.log(`Room created: ${roomId} by ${socket.data.playerName}`);
   });
 
-  // Join an existing room
+  // When a player clicks "Join" on an existing room
   socket.on('join_room', (roomId) => {
     if (rooms[roomId] && rooms[roomId].players.length < 4) {
       socket.join(roomId);
       rooms[roomId].players.push({ id: socket.id, name: socket.data.playerName });
 
-      // Notify everyone in the room about the new player
-      io.to(roomId).emit('room_update', rooms[roomId]);
-
-      // If the room is now full, start the game
+      // If the room is now full, trigger the game to start for everyone in that room
       if (rooms[roomId].players.length === 4) {
-        // NOTE: In a real app, you'd initialize the game state here using your gameLogic
-        // For now, we'll just send a "start_game" event.
-        console.log(`Starting game in room ${roomId}`);
-        io.to(roomId).emit('start_game', { message: 'All players are in! Starting game.' });
+        console.log(`Game starting in room ${roomId}`);
+        io.to(roomId).emit('start_game', {
+          message: 'All players are in! The game will now begin.',
+          room: rooms[roomId]
+        });
+      } else {
+        // If the room is not yet full, just update its state for all players inside it
+        io.to(roomId).emit('room_update', rooms[roomId]);
       }
-      io.emit('rooms_update', rooms); // Update everyone in the lobby
+
+      // Update the lobby list for everyone
+      io.emit('rooms_update', rooms);
     }
   });
 
+  // Handle player disconnections
   socket.on('disconnect', () => {
     console.log(`User Disconnected: ${socket.id}`);
-    // Handle player leaving a room
     for (const roomId in rooms) {
       const room = rooms[roomId];
       const playerIndex = room.players.findIndex(p => p.id === socket.id);
-      if (playerIndex > -1) {
+
+      if (playerIndex !== -1) {
+        // Remove the player from the room
         room.players.splice(playerIndex, 1);
+        
+        // If the room is now empty, delete it
         if (room.players.length === 0) {
-          delete rooms[roomId]; // Delete empty room
+          delete rooms[roomId];
         } else {
-          io.to(roomId).emit('room_update', room); // Notify other players in the room
+          // Otherwise, notify the remaining players
+          io.to(roomId).emit('room_update', room);
         }
-        io.emit('rooms_update', rooms); // Update lobby
+        
+        // Update the lobby for everyone
+        io.emit('rooms_update', rooms);
         break;
       }
     }
   });
 });
 
-server.listen(3001, () => {
-  console.log('SERVER IS RUNNING ON PORT 3001');
+const PORT = process.env.PORT || 3001;
+server.listen(PORT, () => {
+  console.log(`✔️ Multiplayer server is running on port ${PORT}`);
 });
