@@ -5,10 +5,6 @@ import { io, Socket } from "socket.io-client";
 // --- Import Your Components ---
 import { NameInputPopup } from './components/NameInputPopup';
 import { Lobby } from './components/Lobby';
-// You will uncomment and use this once the game logic is integrated
-// import { Table } from './components/Table'; 
-
-// --- Import Your Game Types ---
 import { GameState } from './types/spades';
 
 // --- SERVER URL ---
@@ -18,8 +14,6 @@ const SERVER_URL = "https://callbreak-server.onrender.com";
 // --- Helper Types for Multiplayer ---
 interface Player { id: string; name: string; }
 interface Room { id: string; players: Player[]; gameState: GameState | null; }
-
-// Define different screens to manage the UI flow
 type Screen = 'enter_name' | 'lobby' | 'waiting_room' | 'in_game';
 
 const App: React.FC = () => {
@@ -28,16 +22,12 @@ const App: React.FC = () => {
   const [playerName, setPlayerName] = useState<string>('');
   const [rooms, setRooms] = useState<Record<string, Room>>({});
   const [currentRoom, setCurrentRoom] = useState<Room | null>(null);
-  
-  // Use a ref for the socket to prevent re-renders from creating new connections
   const socketRef = useRef<Socket | null>(null);
 
   // --- Effect for Server Connection and Event Listeners ---
   useEffect(() => {
     // This effect runs only once to establish the connection
-    const newSocket = io(SERVER_URL, {
-      transports: ['websocket', 'polling'], // Prioritize websocket for stability
-    });
+    const newSocket = io(SERVER_URL);
     socketRef.current = newSocket;
 
     newSocket.on('connect', () => console.log('Successfully connected to server'));
@@ -92,7 +82,7 @@ const App: React.FC = () => {
       return (
         <div className="fixed inset-0 bg-teal-800 flex items-center justify-center text-white text-2xl">
           <h1 className="text-4xl font-bold">Game in Progress!</h1>
-          {/* This is where you will render your <Table /> component in the future */}
+          {/* This is where you will render your <Table /> component */}
         </div>
       );
     default:
