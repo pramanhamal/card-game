@@ -5,13 +5,14 @@ const { Server } = require("socket.io");
 const cors = require('cors');
 
 const app = express();
-app.use(cors());
+app.use(cors()); // Use the cors middleware to allow cross-origin requests
 
 const server = http.createServer(app);
 
+// Initialize Socket.IO with CORS settings to allow your frontend to connect
 const io = new Server(server, {
   cors: {
-    origin: "*", // Allows connections from any origin, including your Render frontend
+    origin: "*", // Allows all origins for simplicity. For production, you can restrict this to your frontend's URL.
     methods: ["GET", "POST"]
   }
 });
@@ -30,23 +31,19 @@ io.on('connection', (socket) => {
 
   // When a player clicks "Create Room"
   socket.on('create_room', () => {
-    // Generate a unique Room ID
     const roomId = `room_${socket.id}`;
-    // Create the room object
-    rooms[roomId] = {
-        id: roomId,
-        players: [],
-        gameState: null // Game state will be added later
-    };
-    // Have the socket join the room
+    rooms[roomId] = { id: roomId, players: [], gameState: null };
+    
+    // Have the creator join the Socket.IO room
     socket.join(roomId);
-    // Add the creator as the first player
+    
+    // Add the creator to the list of players in the room
     rooms[roomId].players.push({ id: socket.id, name: socket.data.playerName });
-
-    // Send confirmation to the player that they have joined the room
+    
+    // Let the creator know they've successfully joined
     socket.emit('joined_room', rooms[roomId]);
     
-    // Send the updated room list to everyone in the lobby
+    // Update the lobby for all other connected clients
     io.emit('rooms_update', rooms);
     console.log(`Room created: ${roomId} by ${socket.data.playerName}`);
   });
@@ -57,19 +54,17 @@ io.on('connection', (socket) => {
       socket.join(roomId);
       rooms[roomId].players.push({ id: socket.id, name: socket.data.playerName });
 
-      // If the room is now full, trigger the game to start for everyone in that room
+      // If the room is now full, start the game for everyone in it
       if (rooms[roomId].players.length === 4) {
         console.log(`Game starting in room ${roomId}`);
-        io.to(roomId).emit('start_game', {
-          message: 'All players are in! The game will now begin.',
-          room: rooms[roomId]
-        });
+        // In a real game, you would initialize the GameState here and send it
+        io.to(roomId).emit('start_game', { room: rooms[roomId] });
       } else {
-        // If the room is not yet full, just update its state for all players inside it
+        // Otherwise, just update the room for the other players
         io.to(roomId).emit('room_update', rooms[roomId]);
       }
-
-      // Update the lobby list for everyone
+      
+      // Update the lobby for all clients
       io.emit('rooms_update', rooms);
     }
   });
@@ -77,30 +72,31 @@ io.on('connection', (socket) => {
   // Handle player disconnections
   socket.on('disconnect', () => {
     console.log(`User Disconnected: ${socket.id}`);
+    // Find which room the player was in and remove them
     for (const roomId in rooms) {
       const room = rooms[roomId];
       const playerIndex = room.players.findIndex(p => p.id === socket.id);
 
       if (playerIndex !== -1) {
-        // Remove the player from the room
         room.players.splice(playerIndex, 1);
         
         // If the room is now empty, delete it
         if (room.players.length === 0) {
           delete rooms[roomId];
         } else {
-          // Otherwise, notify the remaining players
+          // Otherwise, notify the remaining players in the room
           io.to(roomId).emit('room_update', room);
         }
         
         // Update the lobby for everyone
         io.emit('rooms_update', rooms);
-        break;
+        break; // Exit the loop once the player is found and handled
       }
     }
   });
 });
 
+// Use the PORT environment variable provided by Render, with a fallback for local development
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
   console.log(`✔️ Multiplayer server is running on port ${PORT}`);

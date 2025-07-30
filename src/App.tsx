@@ -1,10 +1,11 @@
+// src/App.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import { io, Socket } from "socket.io-client";
 
 // --- Import Your Components ---
 import { NameInputPopup } from './components/NameInputPopup';
 import { Lobby } from './components/Lobby';
-// Import other components you will use in the future, like the game Table
+// You will uncomment and use this once the game logic is integrated
 // import { Table } from './components/Table'; 
 
 // --- Import Your Game Types ---
@@ -15,15 +16,8 @@ import { GameState } from './types/spades';
 const SERVER_URL = "https://callbreak-server.onrender.com";
 
 // --- Helper Types for Multiplayer ---
-interface Player {
-  id: string;
-  name: string;
-}
-interface Room {
-  id: string;
-  players: Player[];
-  gameState: GameState | null;
-}
+interface Player { id: string; name: string; }
+interface Room { id: string; players: Player[]; gameState: GameState | null; }
 
 // Define different screens to manage the UI flow
 type Screen = 'enter_name' | 'lobby' | 'waiting_room' | 'in_game';
@@ -34,7 +28,6 @@ const App: React.FC = () => {
   const [playerName, setPlayerName] = useState<string>('');
   const [rooms, setRooms] = useState<Record<string, Room>>({});
   const [currentRoom, setCurrentRoom] = useState<Room | null>(null);
-  const [gameState, setGameState] = useState<GameState | null>(null);
   
   // Use a ref for the socket to prevent re-renders from creating new connections
   const socketRef = useRef<Socket | null>(null);
@@ -42,35 +35,23 @@ const App: React.FC = () => {
   // --- Effect for Server Connection and Event Listeners ---
   useEffect(() => {
     // This effect runs only once to establish the connection
-    const newSocket = io(SERVER_URL);
+    const newSocket = io(SERVER_URL, {
+      reconnectionAttempts: 5,
+      reconnectionDelay: 5000,
+    });
     socketRef.current = newSocket;
 
-    // --- All event listeners are set up once when the connection is made ---
+    newSocket.on('connect', () => console.log('Successfully connected to server'));
+    newSocket.on('connect_error', (err) => console.error('Connection Error:', err.message));
 
-    newSocket.on('connect', () => {
-      console.log('Successfully connected to server with ID:', newSocket.id);
-    });
-
-    // Listens for updates to the list of available rooms
-    newSocket.on('rooms_update', (updatedRooms: Record<string, Room>) => {
-      setRooms(updatedRooms);
-    });
-
-    // Confirms that the player has successfully joined a room
-    newSocket.on('joined_room', (roomDetails: Room) => {
+    newSocket.on('rooms_update', (updatedRooms) => setRooms(updatedRooms));
+    newSocket.on('joined_room', (roomDetails) => {
       setCurrentRoom(roomDetails);
-      setScreen('waiting_room'); // Explicitly change the screen to the waiting room
+      setScreen('waiting_room');
     });
-
-    // Updates the current room when other players join or leave
-    newSocket.on('room_update', (roomDetails: Room) => {
-      setCurrentRoom(roomDetails);
-    });
-
-    // Triggers the start of the game
-    newSocket.on('start_game', (data: { room: Room }) => {
+    newSocket.on('room_update', (roomDetails) => setCurrentRoom(roomDetails));
+    newSocket.on('start_game', (data) => {
       setCurrentRoom(data.room);
-      console.log("Game is starting!", data.room);
       setScreen('in_game');
     });
     
@@ -78,41 +59,25 @@ const App: React.FC = () => {
     return () => {
       newSocket.disconnect();
     };
-  }, []); // The empty dependency array ensures this effect runs only ONCE.
+  }, []); // Empty array ensures this runs only ONCE.
 
-
-  // --- Handler Functions to Emit Events to the Server ---
-
+  // --- Handler Functions to Emit Events ---
   const handleNameSubmit = (name: string) => {
     setPlayerName(name);
     setScreen('lobby');
     socketRef.current?.emit('join_lobby', name);
   };
+  const handleCreateRoom = () => socketRef.current?.emit('create_room');
+  const handleJoinRoom = (roomId: string) => socketRef.current?.emit('join_room', roomId);
 
-  const handleCreateRoom = () => {
-    socketRef.current?.emit('create_room');
-  };
-
-  const handleJoinRoom = (roomId: string) => {
-    socketRef.current?.emit('join_room', roomId);
-  };
-
-
-  // --- Conditional Rendering Logic based on the 'screen' state ---
-  
+  // --- Render Logic ---
   switch (screen) {
     case 'enter_name':
       return <NameInputPopup onNameSubmit={handleNameSubmit} />;
-
     case 'lobby':
       return <Lobby rooms={rooms} onCreateRoom={handleCreateRoom} onJoinRoom={handleJoinRoom} />;
-
     case 'waiting_room':
-      // This is a defensive check in case the room data is not yet available
-      if (!currentRoom) {
-        setScreen('lobby');
-        return null;
-      }
+      if (!currentRoom) return <div className="text-white text-center p-10">Loading room...</div>;
       return (
         <div className="fixed inset-0 bg-teal-800 flex items-center justify-center text-white text-2xl">
           <div className="bg-black bg-opacity-50 p-10 rounded-lg text-center shadow-lg">
@@ -124,18 +89,14 @@ const App: React.FC = () => {
           </div>
         </div>
       );
-
     case 'in_game':
-        // This is where you would render your actual game Table component.
-        // You would pass the server-driven 'gameState' to it.
-        return (
-            <div className="fixed inset-0 bg-teal-800 flex items-center justify-center text-white text-2xl">
-                Game in Progress!
-            </div>
-        );
-
+      return (
+        <div className="fixed inset-0 bg-teal-800 flex items-center justify-center text-white text-2xl">
+          <h1 className="text-4xl font-bold">Game in Progress!</h1>
+          {/* This is where you will render your <Table /> component in the future */}
+        </div>
+      );
     default:
-      // Fallback to the name entry screen if the state is invalid
       return <NameInputPopup onNameSubmit={handleNameSubmit} />;
   }
 };
