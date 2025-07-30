@@ -27,13 +27,11 @@ let rooms = {}; // This object will store all active game rooms
 io.on('connection', (socket) => {
   console.log(`User Connected: ${socket.id}`);
 
-  // When a player provides their name and enters the lobby
   socket.on('join_lobby', (playerName) => {
     socket.data.playerName = playerName;
     socket.emit('rooms_update', rooms);
   });
 
-  // When a player clicks "Create Room"
   socket.on('create_room', () => {
     const roomId = `room_${socket.id}`;
     rooms[roomId] = { id: roomId, players: [], gameState: null };
@@ -44,7 +42,6 @@ io.on('connection', (socket) => {
     console.log(`Room created: ${roomId} by ${socket.data.playerName}`);
   });
 
-  // When a player clicks "Join" on an existing room
   socket.on('join_room', (roomId) => {
     if (rooms[roomId] && rooms[roomId].players.length < 4) {
       socket.join(roomId);
@@ -59,7 +56,6 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Handle player disconnections
   socket.on('disconnect', () => {
     console.log(`User Disconnected: ${socket.id}`);
     for (const roomId in rooms) {
@@ -79,7 +75,6 @@ io.on('connection', (socket) => {
   });
 });
 
-// Use the PORT environment variable provided by Render
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
   console.log(`✔️ Multiplayer server is running on port ${PORT}`);
