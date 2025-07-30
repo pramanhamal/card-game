@@ -1,18 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { io, Socket } from "socket.io-client";
 
 // --- Import Your Components ---
-import { Table } from './components/Table';
 import { NameInputPopup } from './components/NameInputPopup';
 import { Lobby } from './components/Lobby';
-import { GameOverPopup } from './components/GameOverPopup';
+// Import other components you will use in the future, like the game Table
+// import { Table } from './components/Table'; 
 
 // --- Import Your Game Types ---
-import { GameState, PlayerId, Card } from './types/spades';
+import { GameState } from './types/spades';
 
 // --- SERVER URL ---
-// This MUST be the URL of your deployed backend service from Render
-const SERVER_URL = "https://callbreak-server.onrender.com"; // << IMPORTANT: Make sure this URL is correct
+// This must be the correct URL of your deployed backend service from Render
+const SERVER_URL = "https://callbreak-server.onrender.com";
 
 // --- Helper Types for Multiplayer ---
 interface Player {
@@ -25,142 +25,119 @@ interface Room {
   gameState: GameState | null;
 }
 
+// Define different screens to manage the UI flow
+type Screen = 'enter_name' | 'lobby' | 'waiting_room' | 'in_game';
+
 const App: React.FC = () => {
   // --- State Management ---
-  const [socket, setSocket] = useState<Socket | null>(null);
+  const [screen, setScreen] = useState<Screen>('enter_name');
   const [playerName, setPlayerName] = useState<string>('');
   const [rooms, setRooms] = useState<Record<string, Room>>({});
   const [currentRoom, setCurrentRoom] = useState<Room | null>(null);
   const [gameState, setGameState] = useState<GameState | null>(null);
-  const [showGameStartPopup, setShowGameStartPopup] = useState(false);
+  
+  // Use a ref for the socket to prevent re-renders from creating new connections
+  const socketRef = useRef<Socket | null>(null);
 
-  // --- Effects for Server Communication ---
-
-  // Effect to establish a connection to the server
+  // --- Effect for Server Connection and Event Listeners ---
   useEffect(() => {
+    // This effect runs only once to establish the connection
     const newSocket = io(SERVER_URL);
-    setSocket(newSocket);
+    socketRef.current = newSocket;
 
+    // --- All event listeners are set up once when the connection is made ---
+
+    newSocket.on('connect', () => {
+      console.log('Successfully connected to server with ID:', newSocket.id);
+    });
+
+    // Listens for updates to the list of available rooms
+    newSocket.on('rooms_update', (updatedRooms: Record<string, Room>) => {
+      setRooms(updatedRooms);
+    });
+
+    // Confirms that the player has successfully joined a room
+    newSocket.on('joined_room', (roomDetails: Room) => {
+      setCurrentRoom(roomDetails);
+      setScreen('waiting_room'); // Explicitly change the screen to the waiting room
+    });
+
+    // Updates the current room when other players join or leave
+    newSocket.on('room_update', (roomDetails: Room) => {
+      setCurrentRoom(roomDetails);
+    });
+
+    // Triggers the start of the game
+    newSocket.on('start_game', (data: { room: Room }) => {
+      setCurrentRoom(data.room);
+      console.log("Game is starting!", data.room);
+      setScreen('in_game');
+    });
+    
     // Clean up the connection when the component unmounts
     return () => {
       newSocket.disconnect();
     };
-  }, []);
-
-  // Effect to set up all socket event listeners
-  useEffect(() => {
-    if (!socket) return;
-
-    // Listener for lobby updates (e.g., new room created)
-    socket.on('rooms_update', (updatedRooms: Record<string, Room>) => {
-      setRooms(updatedRooms);
-    });
-
-    // Listener for when this player successfully joins a room
-    socket.on('joined_room', (roomDetails: Room) => {
-      setCurrentRoom(roomDetails);
-    });
-
-    // Listener for when another player joins or leaves the current room
-    socket.on('room_update', (roomDetails: Room) => {
-      setCurrentRoom(roomDetails);
-    });
-
-    // Listener for when the game starts
-    socket.on('start_game', (data: { room: Room; /* initialGameState: GameState */ }) => {
-      setCurrentRoom(data.room);
-      setShowGameStartPopup(true);
-      setTimeout(() => {
-        setShowGameStartPopup(false);
-        // In a full implementation, the server would send the initial game state
-        // setGameState(data.initialGameState);
-      }, 3000); // Show popup for 3 seconds
-    });
-
-    // In a full game, you would also listen for game state updates
-    // socket.on('game_state_update', (newGameState: GameState) => {
-    //   setGameState(newGameState);
-    // });
-
-    // Cleanup listeners when the socket changes
-    return () => {
-      socket.off('rooms_update');
-      socket.off('joined_room');
-      socket.off('room_update');
-      socket.off('start_game');
-      // socket.off('game_state_update');
-    };
-  }, [socket]);
+  }, []); // The empty dependency array ensures this effect runs only ONCE.
 
 
-  // --- Handler Functions to Emit Events to Server ---
+  // --- Handler Functions to Emit Events to the Server ---
 
   const handleNameSubmit = (name: string) => {
     setPlayerName(name);
-    socket?.emit('join_lobby', name);
+    setScreen('lobby');
+    socketRef.current?.emit('join_lobby', name);
   };
 
   const handleCreateRoom = () => {
-    socket?.emit('create_room');
+    socketRef.current?.emit('create_room');
   };
 
   const handleJoinRoom = (roomId: string) => {
-    socket?.emit('join_room', roomId);
+    socketRef.current?.emit('join_room', roomId);
   };
 
-  // In a full game, you would emit player actions like this:
-  // const handlePlayCard = (card: Card) => {
-  //   socket?.emit('play_card', { roomId: currentRoom?.id, card });
-  // };
 
+  // --- Conditional Rendering Logic based on the 'screen' state ---
+  
+  switch (screen) {
+    case 'enter_name':
+      return <NameInputPopup onNameSubmit={handleNameSubmit} />;
 
-  // --- Conditional Rendering Logic ---
+    case 'lobby':
+      return <Lobby rooms={rooms} onCreateRoom={handleCreateRoom} onJoinRoom={handleJoinRoom} />;
 
-  // 1. If the player hasn't entered their name yet
-  if (!playerName) {
-    return <NameInputPopup onNameSubmit={handleNameSubmit} />;
-  }
-
-  // 2. If the game is in progress
-  if (gameState) {
-    // NOTE: This part is a placeholder. You would need to fully integrate
-    // the server-driven gameState with your Table component.
-    return (
-      <div className="fixed inset-0 bg-teal-800 overflow-hidden">
-        {/* <Table state={gameState} playCard={handlePlayCard} you={...} onEvaluateTrick={...} /> */}
-        <h1 className="text-white text-4xl text-center p-10">Game is Running...</h1>
-      </div>
-    );
-  }
-
-  // 3. If the "Game Starting" popup should be visible
-  if (showGameStartPopup) {
-    return (
-      <div className="fixed inset-0 bg-teal-800 flex items-center justify-center">
-        <div className="bg-white p-8 rounded-lg shadow-xl text-2xl font-bold animate-pulse">
-          All players are in! Starting the game...
-        </div>
-      </div>
-    );
-  }
-
-  // 4. If the player is in a room, waiting for others
-  if (currentRoom) {
-    return (
-      <div className="fixed inset-0 bg-teal-800 flex items-center justify-center text-white text-2xl">
-        <div className="bg-black bg-opacity-50 p-10 rounded-lg text-center shadow-lg">
-          <h2 className="text-3xl font-bold mb-4">Room: {currentRoom.players[0]?.name}'s Game</h2>
-          <p className="mb-6">Waiting for players... ({currentRoom.players.length}/4)</p>
-          <div className="space-y-2">
-            {currentRoom.players.map(p => <p key={p.id}>{p.name} has joined.</p>)}
+    case 'waiting_room':
+      // This is a defensive check in case the room data is not yet available
+      if (!currentRoom) {
+        setScreen('lobby');
+        return null;
+      }
+      return (
+        <div className="fixed inset-0 bg-teal-800 flex items-center justify-center text-white text-2xl">
+          <div className="bg-black bg-opacity-50 p-10 rounded-lg text-center shadow-lg">
+            <h2 className="text-3xl font-bold mb-4">Room: {currentRoom.players[0]?.name}'s Game</h2>
+            <p className="mb-6 animate-pulse">Waiting for players... ({currentRoom.players.length}/4)</p>
+            <div className="space-y-2">
+              {currentRoom.players.map(p => <p key={p.id}>✅ {p.name} has joined.</p>)}
+            </div>
           </div>
         </div>
-      </div>
-    );
-  }
+      );
 
-  // 5. If none of the above, show the lobby
-  return <Lobby rooms={rooms} onCreateRoom={handleCreateRoom} onJoinRoom={handleJoinRoom} />;
+    case 'in_game':
+        // This is where you would render your actual game Table component.
+        // You would pass the server-driven 'gameState' to it.
+        return (
+            <div className="fixed inset-0 bg-teal-800 flex items-center justify-center text-white text-2xl">
+                Game in Progress!
+            </div>
+        );
+
+    default:
+      // Fallback to the name entry screen if the state is invalid
+      return <NameInputPopup onNameSubmit={handleNameSubmit} />;
+  }
 };
 
 export default App;
