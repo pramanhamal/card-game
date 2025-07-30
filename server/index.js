@@ -1,81 +1,51 @@
-// server/index.js
-const express = require('express');
-const http = require('http');
-const { Server } = require("socket.io");
-const cors = require('cors');
+// server.js (or index.js)
+
+import express from 'express';
+import http from 'http';
+import { Server as IOServer } from 'socket.io';
+import cors from 'cors';
 
 const app = express();
-app.use(cors()); // Use the cors middleware for all incoming requests
 
-// Health check route to verify the server is running
-app.get('/health', (req, res) => {
-  res.status(200).send('Server is healthy and running!');
+// 1) Enable CORS for your React front‑end origin
+app.use(cors({
+  origin: 'https://callbreak-hxwr.onrender.com',
+  credentials: true
+}));
+
+// (optional) a quick sanity‑check route
+app.get('/', (req, res) => {
+  res.send('Socket.IO + CORS server is up');
 });
 
-const server = http.createServer(app);
-
-// Initialize Socket.IO with CORS settings to allow your frontend to connect
-const io = new Server(server, {
+// 2) Create the HTTP server and bind Socket.IO to it
+const httpServer = http.createServer(app);
+const io = new IOServer(httpServer, {
   cors: {
-    origin: "*", // Allows all origins. For production, you can restrict this to your frontend's URL.
-    methods: ["GET", "POST"]
+    origin: 'https://callbreak-hxwr.onrender.com',
+    methods: ['GET','POST'],
+    credentials: true
   }
 });
 
-let rooms = {}; // This object will store all active game rooms
+// 3) Your socket‐event handlers
+io.on('connection', socket => {
+  console.log('↔️  Client connected:', socket.id);
 
-io.on('connection', (socket) => {
-  console.log(`User Connected: ${socket.id}`);
-
-  socket.on('join_lobby', (playerName) => {
-    socket.data.playerName = playerName;
-    socket.emit('rooms_update', rooms);
-  });
-
-  socket.on('create_room', () => {
-    const roomId = `room_${socket.id}`;
-    rooms[roomId] = { id: roomId, players: [], gameState: null };
+  // example handler
+  socket.on('joinRoom', ({ roomId }) => {
     socket.join(roomId);
-    rooms[roomId].players.push({ id: socket.id, name: socket.data.playerName });
-    socket.emit('joined_room', rooms[roomId]);
-    io.emit('rooms_update', rooms);
-    console.log(`Room created: ${roomId} by ${socket.data.playerName}`);
+    io.to(roomId).emit('userJoined', socket.id);
   });
 
-  socket.on('join_room', (roomId) => {
-    if (rooms[roomId] && rooms[roomId].players.length < 4) {
-      socket.join(roomId);
-      rooms[roomId].players.push({ id: socket.id, name: socket.data.playerName });
-
-      if (rooms[roomId].players.length === 4) {
-        io.to(roomId).emit('start_game', { room: rooms[roomId] });
-      } else {
-        io.to(roomId).emit('room_update', rooms[roomId]);
-      }
-      io.emit('rooms_update', rooms);
-    }
-  });
-
+  // clean up on disconnect
   socket.on('disconnect', () => {
-    console.log(`User Disconnected: ${socket.id}`);
-    for (const roomId in rooms) {
-      const room = rooms[roomId];
-      const playerIndex = room.players.findIndex(p => p.id === socket.id);
-      if (playerIndex !== -1) {
-        room.players.splice(playerIndex, 1);
-        if (room.players.length === 0) {
-          delete rooms[roomId];
-        } else {
-          io.to(roomId).emit('room_update', room);
-        }
-        io.emit('rooms_update', rooms);
-        break;
-      }
-    }
+    console.log('❌  Client disconnected:', socket.id);
   });
 });
 
-const PORT = process.env.PORT || 3001;
-server.listen(PORT, () => {
-  console.log(`✔️ Multiplayer server is running on port ${PORT}`);
+// 4) Start listening
+const PORT = process.env.PORT || 3000;
+httpServer.listen(PORT, () => {
+  console.log(`🚀  Listening on port ${PORT}`);
 });
