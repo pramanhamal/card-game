@@ -5,14 +5,16 @@ const { Server } = require("socket.io");
 const cors = require('cors');
 
 const app = express();
-app.use(cors()); // Use the cors middleware to allow cross-origin requests
+
+// Use the cors middleware for all incoming requests from your express server
+app.use(cors());
 
 const server = http.createServer(app);
 
 // Initialize Socket.IO with CORS settings to allow your frontend to connect
 const io = new Server(server, {
   cors: {
-    origin: "*", // Allows all origins for simplicity. For production, you can restrict this to your frontend's URL.
+    origin: "*", // Allows all origins. For production, you can restrict this to your specific frontend URL.
     methods: ["GET", "POST"]
   }
 });

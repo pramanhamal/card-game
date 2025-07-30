@@ -36,8 +36,7 @@ const App: React.FC = () => {
   useEffect(() => {
     // This effect runs only once to establish the connection
     const newSocket = io(SERVER_URL, {
-      reconnectionAttempts: 5,
-      reconnectionDelay: 5000,
+      transports: ['websocket', 'polling'], // Prioritize websocket for stability
     });
     socketRef.current = newSocket;
 
