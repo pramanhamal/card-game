@@ -11,8 +11,8 @@ interface ScoreboardProps {
 
 export const Scoreboard: React.FC<ScoreboardProps> = ({ bids, tricksWon }) => {
   return (
-    <div className="mt-4 p-4 border rounded bg-white">
-      <h3 className="text-lg font-bold mb-2">Bids &amp; Tricks Won</h3>
+    <div className="p-2 sm:p-4 border rounded bg-white">
+      <h3 className="text-base sm:text-lg font-bold mb-2">Bids &amp; Tricks Won</h3>
       <ul className="space-y-1">
         {(['north','east','south','west'] as PlayerId[]).map(player => {
           const bid = bids[player];
@@ -20,7 +20,7 @@ export const Scoreboard: React.FC<ScoreboardProps> = ({ bids, tricksWon }) => {
           // Display "won/bid" for everyone (e.g. "2/3" or "0/0")
           const label = `${won}/${bid}`;
           return (
-            <li key={player} className="capitalize flex justify-between">
+            <li key={player} className="capitalize flex justify-between text-sm sm:text-base">
               <span>{player}</span>
               <span className="font-mono">{label}</span>
             </li>
