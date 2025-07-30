@@ -1,24 +1,24 @@
-// server.js (or index.js)
+// projectRoot/server/index.js
 
-import express from 'express';
-import http from 'http';
-import { Server as IOServer } from 'socket.io';
-import cors from 'cors';
+const express = require('express');
+const http = require('http');
+const { Server: IOServer } = require('socket.io');
+const cors = require('cors');
 
 const app = express();
 
-// 1) Enable CORS for your React front‑end origin
+// Enable CORS for your front‑end origin
 app.use(cors({
   origin: 'https://callbreak-hxwr.onrender.com',
   credentials: true
 }));
 
-// (optional) a quick sanity‑check route
+// Sanity‑check endpoint
 app.get('/', (req, res) => {
   res.send('Socket.IO + CORS server is up');
 });
 
-// 2) Create the HTTP server and bind Socket.IO to it
+// Create HTTP server + bind Socket.IO
 const httpServer = http.createServer(app);
 const io = new IOServer(httpServer, {
   cors: {
@@ -28,23 +28,21 @@ const io = new IOServer(httpServer, {
   }
 });
 
-// 3) Your socket‐event handlers
+// Socket event handlers
 io.on('connection', socket => {
   console.log('↔️  Client connected:', socket.id);
 
-  // example handler
   socket.on('joinRoom', ({ roomId }) => {
     socket.join(roomId);
     io.to(roomId).emit('userJoined', socket.id);
   });
 
-  // clean up on disconnect
   socket.on('disconnect', () => {
     console.log('❌  Client disconnected:', socket.id);
   });
 });
 
-// 4) Start listening
+// Start listening
 const PORT = process.env.PORT || 3000;
 httpServer.listen(PORT, () => {
   console.log(`🚀  Listening on port ${PORT}`);
