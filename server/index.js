@@ -1,75 +1,92 @@
-// projectRoot/server/index.js
-
-const express = require("express");
-const http = require("http");
-const { Server: IOServer } = require("socket.io");
-const cors = require("cors");
-const path = require("path");
-
-// Change this to your actual front-end URL
-const FRONTEND_ORIGIN = "https://callbreak-hxwr.onrender.com";
-const PORT = process.env.PORT || 3000;
+// server/index.js
+const express = require('express');
+const http = require('http');
+const { Server } = require("socket.io");
+const cors = require('cors');
 
 const app = express();
+app.use(cors());
 
-// 1) Enable CORS on all HTTP routes (including polling errors)
-app.use(
-  cors({
-    origin: FRONTEND_ORIGIN,
-    credentials: true,
-  })
-);
+const server = http.createServer(app);
 
-// 2) Create the HTTP server and _then_ bind Socket.IO
-const httpServer = http.createServer(app);
-const io = new IOServer(httpServer, {
+// Set up Socket.IO with CORS settings to allow your React app to connect
+const io = new Server(server, {
   cors: {
-    origin: FRONTEND_ORIGIN,
-    methods: ["GET", "POST"],
-    credentials: true,
-  },
-  // allow both polling (handshake) and websocket upgrade
-  transports: ["polling", "websocket"],
+    origin: "*", // Make sure this matches your React app's URL
+    methods: ["GET", "POST"]
+  }
 });
 
-// 3) Socket.IO event handlers
-io.on("connection", (socket) => {
-  console.log("↔️  Client connected:", socket.id);
+let rooms = {}; // This object will store all active game rooms
 
-  socket.on("join_lobby", (playerName) => {
-    // example: emit all rooms back to everyone
-    // io.emit("rooms_update", currentRooms);
+io.on('connection', (socket) => {
+  console.log(`User Connected: ${socket.id}`);
+
+  // When a player provides their name and enters the lobby
+  socket.on('join_lobby', (playerName) => {
+    socket.data.playerName = playerName;
+    // Send the current list of rooms to the newly connected player
+    socket.emit('rooms_update', rooms);
   });
 
-  socket.on("create_room", () => {
-    // create a room, then:
-    // io.emit("rooms_update", updatedRooms);
-  });
-
-  socket.on("join_room", (roomId) => {
+  // When a player clicks "Create Room"
+  socket.on('create_room', () => {
+    const roomId = `room_${socket.id}`;
+    rooms[roomId] = { players: [], gameState: null, id: roomId };
     socket.join(roomId);
-    // send back your room details
-    // socket.emit("joined_room", roomDetails);
-    // broadcast update
-    // io.to(roomId).emit("room_update", roomDetails);
+    rooms[roomId].players.push({ id: socket.id, name: socket.data.playerName });
+
+    socket.emit('joined_room', rooms[roomId]); // Tell the player they've joined
+    io.emit('rooms_update', rooms); // Send the updated room list to everyone in the lobby
+    console.log(`Room created: ${roomId} by ${socket.data.playerName}`);
   });
 
-  socket.on("start_game", () => {
-    // io.emit("start_game", { room: roomDetails });
+  // When a player clicks "Join" on a room
+  socket.on('join_room', (roomId) => {
+    if (rooms[roomId] && rooms[roomId].players.length < 4) {
+      socket.join(roomId);
+      rooms[roomId].players.push({ id: socket.id, name: socket.data.playerName });
+
+      // If the room is now full, trigger the game to start
+      if (rooms[roomId].players.length === 4) {
+        console.log(`Game starting in room ${roomId}`);
+        // In a full implementation, you would initialize the game state here
+        // and send it to all players.
+        io.to(roomId).emit('start_game', {
+          message: 'All players are in! The game will now begin.',
+          room: rooms[roomId]
+        });
+      } else {
+        // If the room is not yet full, just update its state for all players inside it
+        io.to(roomId).emit('room_update', rooms[roomId]);
+      }
+
+      io.emit('rooms_update', rooms); // Update the lobby for everyone
+    }
   });
 
-  socket.on("disconnect", () => {
-    console.log("❌  Client disconnected:", socket.id);
+  socket.on('disconnect', () => {
+    console.log(`User Disconnected: ${socket.id}`);
+    // Find which room the player was in and remove them
+    for (const roomId in rooms) {
+      const room = rooms[roomId];
+      const playerIndex = room.players.findIndex(p => p.id === socket.id);
+
+      if (playerIndex !== -1) {
+        room.players.splice(playerIndex, 1);
+        if (room.players.length === 0) {
+          delete rooms[roomId]; // Delete the room if it's empty
+        } else {
+          io.to(roomId).emit('room_update', room); // Notify others in the room
+        }
+        io.emit('rooms_update', rooms); // Update the lobby
+        break;
+      }
+    }
   });
 });
 
-// 4) (Optional) if you’ve built your React app into client/dist, serve it _after_ Socket.IO:
-app.use(express.static(path.join(__dirname, "../client/dist")));
-app.get("*", (req, res) =>
-  res.sendFile(path.join(__dirname, "../client/dist/index.html"))
-);
-
-// 5) Finally, start listening
-httpServer.listen(PORT, () => {
-  console.log(`🚀  Server listening on port ${PORT}`);
+const PORT = 3001;
+server.listen(PORT, () => {
+  console.log(`✔️ Server is running on http://localhost:${PORT}`);
 });
