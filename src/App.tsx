@@ -11,8 +11,8 @@ import { GameOverPopup } from './components/GameOverPopup';
 import { GameState, PlayerId, Card } from './types/spades';
 
 // --- SERVER URL ---
-// Replace this with the URL of your deployed backend service from Render
-const SERVER_URL = "https://your-call-break-server.onrender.com";
+// This MUST be the URL of your deployed backend service from Render
+const SERVER_URL = "https://callbreak-server.onrender.com"; // << IMPORTANT: Make sure this URL is correct
 
 // --- Helper Types for Multiplayer ---
 interface Player {
@@ -128,6 +128,7 @@ const App: React.FC = () => {
     return (
       <div className="fixed inset-0 bg-teal-800 overflow-hidden">
         {/* <Table state={gameState} playCard={handlePlayCard} you={...} onEvaluateTrick={...} /> */}
+        <h1 className="text-white text-4xl text-center p-10">Game is Running...</h1>
       </div>
     );
   }
@@ -147,7 +148,7 @@ const App: React.FC = () => {
   if (currentRoom) {
     return (
       <div className="fixed inset-0 bg-teal-800 flex items-center justify-center text-white text-2xl">
-        <div className="bg-black bg-opacity-50 p-10 rounded-lg text-center">
+        <div className="bg-black bg-opacity-50 p-10 rounded-lg text-center shadow-lg">
           <h2 className="text-3xl font-bold mb-4">Room: {currentRoom.players[0]?.name}'s Game</h2>
           <p className="mb-6">Waiting for players... ({currentRoom.players.length}/4)</p>
           <div className="space-y-2">
