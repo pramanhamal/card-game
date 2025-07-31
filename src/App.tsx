@@ -1,4 +1,3 @@
-// client/src/App.tsx
 import React, { useState, useEffect } from "react";
 import socket from "./socket";
 
@@ -62,13 +61,21 @@ const App: React.FC = () => {
     case "enter_name":
       return <NameInputPopup onNameSubmit={handleNameSubmit} />;
     case "lobby":
-      return <Lobby rooms={rooms} onCreateRoom={handleCreateRoom} onJoinRoom={handleJoinRoom} />;
+      return (
+        <Lobby
+          rooms={rooms}
+          onCreateRoom={handleCreateRoom}
+          onJoinRoom={handleJoinRoom}
+        />
+      );
     case "waiting_room":
       if (!currentRoom) return <div>Loading room…</div>;
       return (
         <div className="fixed inset-0 bg-teal-800 flex items-center justify-center text-white text-2xl">
           <div className="bg-black bg-opacity-50 p-10 rounded-lg text-center shadow-lg">
-            <h2 className="text-3xl font-bold mb-4">Room: {currentRoom.players[0]?.name}'s Game</h2>
+            <h2 className="text-3xl font-bold mb-4">
+              Room: {currentRoom.players[0]?.name}'s Game
+            </h2>
             <p className="mb-6 animate-pulse">
               Waiting for players… ({currentRoom.players.length}/4)
             </p>
