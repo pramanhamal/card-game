@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multiplayer Room</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #f0f2f5; }
+        #game-container { text-align: center; padding: 40px; background-color: white; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+        h1 { color: #333; }
+        p { color: #666; font-size: 1.2rem; }
+        button { background-color: #007bff; color: white; border: none; padding: 15px 30px; border-radius: 5px; font-size: 1rem; cursor: pointer; transition: background-color 0.3s; }
+        button:disabled { background-color: #cccccc; cursor: not-allowed; }
+        #game-state { display: none; }
+        #game-state h2 { color: #28a745; }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <div id="waiting-room">
+        <h1>Waiting for Players...</h1>
+        <p>Players in room: <span id="player-count">0</span> / 4</p>
+        <button id="join-button">Join Game</button>
+    </div>
+
+    <div id="game-state">
+        <h2>Game has started! 🎉</h2>
+        <p>All 4 players are here. Now, your game logic would take over.</p>
+    </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+    const socket = io();
+
+    const joinButton = document.getElementById('join-button');
+    const playerCountSpan = document.getElementById('player-count');
+    const waitingRoomDiv = document.getElementById('waiting-room');
+    const gameStateDiv = document.getElementById('game-state');
+    const roomName = 'main-room'; // You can make this dynamic
+
+    // --- Event Listeners from Server ---
+
+    // Update the player count on the UI
+    socket.on('playerCountUpdate', (count) => {
+        playerCountSpan.textContent = count;
+    });
+
+    // The server has signaled the game to start
+    socket.on('gameStart', (data) => {
+        console.log(data.message);
+        // Hide the waiting room UI and show the game state UI
+        waitingRoomDiv.style.display = 'none';
+        gameStateDiv.style.display = 'block';
+
+        // ** YOUR GAME START LOGIC GOES HERE **
+        // For example, initialize the game board, characters, etc.
+    });
+
+    // --- Client Actions to Server ---
+
+    // Handle the join button click
+    joinButton.addEventListener('click', () => {
+        socket.emit('joinRoom', roomName);
+        joinButton.textContent = 'Waiting for others...';
+        joinButton.disabled = true; // Disable the button after joining
+    });
+
+</script>
+</body>
+</html>
