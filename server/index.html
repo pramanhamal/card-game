@@ -1,80 +1,401 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Call Break Game</title>
-    <style>
-        body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #f0f2f5; }
-        #game-container { text-align: center; padding: 40px; background-color: white; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
-        h1 { color: #333; }
-        p { color: #666; font-size: 1.2rem; }
-        button { background-color: #007bff; color: white; border: none; padding: 15px 30px; border-radius: 5px; font-size: 1rem; cursor: pointer; transition: background-color 0.3s; }
-        button:disabled { background-color: #cccccc; cursor: not-allowed; }
-        #game-state { display: none; }
-        #game-state h2 { color: #28a745; }
-    </style>
-</head>
-<body>
+// server/index.js
+const express = require('express');
+const http = require('http');
+const { Server } = require("socket.io");
+const cors = require('cors');
+const crypto = require('crypto');
 
-<div id="game-container">
-    <div id="waiting-room">
-        <h1>Waiting Room</h1>
-        <p>Players in room: <span id="player-count">0</span> / 4</p>
-        <button id="join-button">Join Game</button>
-    </div>
+const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || "https://callbreak-hxwr.onrender.com"; // must match exactly what client uses
 
-    <div id="game-state">
-        <h2>Game has started! 🎉</h2>
-        <p>All 4 players have joined. The game can now begin!</p>
-    </div>
-</div>
+const app = express();
+app.use(
+  cors({
+    origin: FRONTEND_ORIGIN,
+    credentials: true,
+    methods: ["GET", "POST"],
+  })
+);
+app.get("/", (req, res) => res.send("✔️ Multiplayer server is alive"));
 
-<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
-<script>
-    // =================== CLIENT-SIDE CONNECTION ===================
-    // Connect to your LIVE backend server on Render
-    const socket = io("https://call-break-server.onrender.com");
-    // ============================================================
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: FRONTEND_ORIGIN,
+    credentials: true,
+    methods: ["GET", "POST"],
+  },
+  path: "/socket.io",
+});
 
-    const joinButton = document.getElementById('join-button');
-    const playerCountSpan = document.getElementById('player-count');
-    const waitingRoomDiv = document.getElementById('waiting-room');
-    const gameStateDiv = document.getElementById('game-state');
-    const roomName = 'main-room'; // A default room name
+// Card helpers
+const SUITS = ["clubs", "diamonds", "hearts", "spades"];
+const RANKS = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"];
+const rankValues = {
+  "2": 2, "3": 3, "4": 4, "5": 5, "6": 6,
+  "7": 7, "8": 8, "9": 9, "10": 10,
+  J: 11, Q: 12, K: 13, A: 14,
+};
 
-    // --- Event Listeners from Server ---
+function createDeck() {
+  const deck = [];
+  for (const suit of SUITS) {
+    for (const rank of RANKS) {
+      deck.push({ suit, rank });
+    }
+  }
+  return deck;
+}
 
-    socket.on('connect', () => {
-        console.log('Successfully connected to the server!', socket.id);
+function shuffle(array) {
+  for (let i = array.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [array[i], array[j]] = [array[j], array[i]];
+  }
+}
+
+function nextSeatClockwise(seat) {
+  const order = ["North", "East", "South", "West"];
+  const idx = order.indexOf(seat);
+  return order[(idx + 1) % 4];
+}
+
+function determineTrickWinner(trick) {
+  if (!trick || Object.values(trick).filter(c => c !== null).length === 0) return null;
+  const played = Object.entries(trick).filter(([, card]) => card !== null);
+  const leadSuit = played[0][1].suit;
+
+  const spadesPlayed = played.filter(([, card]) => card.suit === "spades");
+  let winner;
+  if (spadesPlayed.length > 0) {
+    winner = spadesPlayed.reduce((best, curr) => {
+      return rankValues[curr[1].rank] > rankValues[best[1].rank] ? curr : best;
+    });
+  } else {
+    const leadSuitPlays = played.filter(([, card]) => card.suit === leadSuit);
+    if (leadSuitPlays.length > 0) {
+      winner = leadSuitPlays.reduce((best, curr) => {
+        return rankValues[curr[1].rank] > rankValues[best[1].rank] ? curr : best;
+      });
+    } else {
+      winner = played[0];
+    }
+  }
+  return winner ? winner[0] : null;
+}
+
+// In-memory room store
+const rooms = {}; // roomId -> { players, createdAt, started, game }
+
+function makeRoomId() {
+  return crypto.randomBytes(3).toString("hex");
+}
+
+function findRoomContainingSocket(socketId) {
+  for (const [roomId, room] of Object.entries(rooms)) {
+    if (room.players.some((p) => p.id === socketId)) {
+      return { roomId, room };
+    }
+  }
+  return null;
+}
+
+// centralized start logic
+function tryStartGame(roomId) {
+  const room = rooms[roomId];
+  if (!room) return;
+  console.log(`[GameStartCheck] Room ${roomId}: players=${room.players.length}, started=${room.started}`);
+
+  if (room.players.length >= 4 && !room.started) {
+    room.started = true;
+
+    const seatNames = ["North", "East", "South", "West"];
+    const shuffledPlayers = [...room.players].sort(() => Math.random() - 0.5);
+
+    // Deal
+    const deck = createDeck();
+    shuffle(deck);
+    const hands = [];
+    for (let i = 0; i < 4; i++) {
+      hands.push(deck.slice(i * 13, i * 13 + 13));
+    }
+
+    const seats = {};
+    for (let i = 0; i < 4; i++) {
+      seats[seatNames[i]] = {
+        id: shuffledPlayers[i].id,
+        name: shuffledPlayers[i].name,
+        hand: hands[i],
+      };
+    }
+
+    const startingSeat = seatNames[Math.floor(Math.random() * 4)];
+    room.game = {
+      seats,
+      seatOrder: ["North", "East", "South", "West"],
+      currentTurnSeat: startingSeat,
+      spadesBroken: false,
+      currentTrick: [],
+      bids: { North: null, East: null, South: null, West: null },
+      tricksWon: { North: 0, East: 0, South: 0, West: 0 },
+    };
+
+    console.log(`[GameStarted] Room ${roomId}, startingSeat: ${startingSeat}`);
+    console.log(`[Seat assignment]`, Object.fromEntries(
+      Object.entries(seats).map(([sn, d]) => [sn, { id: d.id, name: d.name }])
+    ));
+
+    // Broadcast seating (names only)
+    io.to(roomId).emit("seating", {
+      seats: Object.fromEntries(
+        Object.entries(seats).map(([seatName, data]) => [seatName, { name: data.name }])
+      ),
+      startingSeat,
     });
 
-    socket.on('connect_error', (err) => {
-        console.error('Socket connection error:', err.message);
+    // Send each player their game_started payload
+    for (const seatName of Object.keys(seats)) {
+      const seatInfo = seats[seatName];
+      const playerSocket = io.sockets.sockets.get(seatInfo.id);
+      if (playerSocket) {
+        playerSocket.emit("game_started", {
+          roomId,
+          yourSeat: seatName,
+          seats: Object.fromEntries(
+            Object.entries(seats).map(([sName, d]) => [sName, { name: d.name }])
+          ),
+          hand: seatInfo.hand,
+          currentTurnSeat: room.game.currentTurnSeat,
+          spadesBroken: room.game.spadesBroken,
+          bids: room.game.bids,
+          tricksWon: room.game.tricksWon,
+        });
+        console.log(`[Emit] game_started to ${seatInfo.name} (${seatInfo.id}) as ${seatName}`);
+      } else {
+        console.warn(`[Warn] Missing socket for seat ${seatName} (${seatInfo.id})`);
+      }
+    }
+  } else {
+    io.to(roomId).emit("start_attempt_status", {
+      roomId,
+      playerCount: room.players.length,
+      started: room.started,
+      message: room.started
+        ? "Game already started"
+        : `Waiting for players: need 4, have ${room.players.length}`,
     });
+  }
+}
 
-    // Update the player count on the UI
-    socket.on('playerCountUpdate', (count) => {
-        playerCountSpan.textContent = count;
-    });
+io.on("connection", (socket) => {
+  console.log("connected:", socket.id);
+  socket.data.playerName = `Player_${socket.id.slice(0, 5)}`;
 
-    // The server has signaled the game to start
-    socket.on('gameStart', (data) => {
-        console.log('Server says:', data.message);
-        waitingRoomDiv.style.display = 'none';
-        gameStateDiv.style.display = 'block';
+  socket.on("set_player_name", (name) => {
+    if (typeof name === "string" && name.trim()) {
+      socket.data.playerName = name.trim();
+      const found = findRoomContainingSocket(socket.id);
+      if (found) {
+        const { roomId, room } = found;
+        const player = room.players.find((p) => p.id === socket.id);
+        if (player) player.name = socket.data.playerName;
+        if (room.started && room.game && room.game.seats) {
+          for (const seatName of Object.keys(room.game.seats)) {
+            if (room.game.seats[seatName].id === socket.id) {
+              room.game.seats[seatName].name = socket.data.playerName;
+            }
+          }
+        }
+        io.to(roomId).emit("room_update", room);
+        io.emit("rooms_update", rooms);
+      }
+    }
+  });
 
-        // ** YOUR GAME START LOGIC GOES HERE **
-    });
+  socket.on("create_room", () => {
+    const roomId = makeRoomId();
+    rooms[roomId] = {
+      players: [{ id: socket.id, name: socket.data.playerName }],
+      createdAt: Date.now(),
+      started: false,
+      game: null,
+    };
+    socket.join(roomId);
+    socket.emit("room_created", { roomId, room: rooms[roomId] });
+    io.emit("rooms_update", rooms);
+    console.log(`Room created: ${roomId} by ${socket.data.playerName}`);
+  });
 
-    // --- Client Actions to Server ---
+  socket.on("join_room", (roomId) => {
+    const room = rooms[roomId];
+    if (!room) {
+      socket.emit("error", { message: "Room does not exist", roomId });
+      return;
+    }
+    if (room.players.find((p) => p.id === socket.id)) {
+      socket.emit("joined_room", { roomId, room });
+      tryStartGame(roomId);
+      return;
+    }
+    if (room.players.length >= 4) {
+      socket.emit("room_full", roomId);
+      return;
+    }
 
-    joinButton.addEventListener('click', () => {
-        socket.emit('joinRoom', roomName);
-        joinButton.textContent = 'Waiting for other players...';
-        joinButton.disabled = true;
-    });
+    socket.join(roomId);
+    room.players.push({ id: socket.id, name: socket.data.playerName });
 
-</script>
-</body>
-</html>
+    socket.emit("joined_room", { roomId, room });
+    io.emit("rooms_update", rooms);
+    io.to(roomId).emit("room_update", room);
+
+    tryStartGame(roomId);
+  });
+
+  socket.on("place_bid", ({ roomId, seat, bid }) => {
+    const room = rooms[roomId];
+    if (!room || !room.started || !room.game) return;
+    if (!["North", "East", "South", "West"].includes(seat)) return;
+    room.game.bids[seat] = bid;
+    io.to(roomId).emit("bids_update", room.game.bids);
+
+    const allBidsIn = Object.values(room.game.bids).every((b) => b !== null);
+    if (allBidsIn) {
+      io.to(roomId).emit("bidding_complete", room.game.bids);
+    }
+  });
+
+  socket.on("play_card", ({ roomId, card }) => {
+    const room = rooms[roomId];
+    if (!room || !room.started || !room.game) return;
+
+    const game = room.game;
+
+    let playerSeat = null;
+    for (const [seatName, info] of Object.entries(game.seats)) {
+      if (info.id === socket.id) {
+        playerSeat = seatName;
+        break;
+      }
+    }
+    if (!playerSeat) return;
+
+    if (game.currentTurnSeat !== playerSeat) {
+      socket.emit("invalid_move", { message: "Not your turn" });
+      return;
+    }
+
+    const playerObj = game.seats[playerSeat];
+    const hand = playerObj.hand;
+
+    const cardIndex = hand.findIndex(
+      (c) => c.suit === card.suit && c.rank === card.rank
+    );
+    if (cardIndex === -1) {
+      socket.emit("invalid_move", { message: "Card not in hand" });
+      return;
+    }
+
+    const isLeading = game.currentTrick.length === 0;
+    const leadSuit = isLeading ? null : game.currentTrick[0].card.suit;
+
+    if (isLeading) {
+      if (card.suit === "spades" && !game.spadesBroken) {
+        const hasNonSpade = hand.some((c) => c.suit !== "spades");
+        if (hasNonSpade) {
+          socket.emit("invalid_move", { message: "Cannot lead spades until broken" });
+          return;
+        }
+      }
+    } else {
+      if (leadSuit && card.suit !== leadSuit) {
+        const hasLeadSuit = hand.some((c) => c.suit === leadSuit);
+        if (hasLeadSuit) {
+          socket.emit("invalid_move", { message: `Must follow suit: ${leadSuit}` });
+          return;
+        }
+      }
+    }
+
+    if (card.suit === "spades" && !game.spadesBroken) {
+      game.spadesBroken = true;
+      io.to(roomId).emit("spades_broken", true);
+    }
+
+    const playedCard = hand.splice(cardIndex, 1)[0];
+    game.currentTrick.push({ seat: playerSeat, card: playedCard });
+
+    if (game.currentTrick.length < 4) {
+      game.currentTurnSeat = nextSeatClockwise(playerSeat);
+      io.to(roomId).emit("trick_update", {
+        currentTrick: game.currentTrick,
+        currentTurnSeat: game.currentTurnSeat,
+        handsRemaining: Object.fromEntries(
+          Object.entries(game.seats).map(([sName, s]) => [sName, s.hand.length])
+        ),
+        tricksWon: game.tricksWon,
+        bids: game.bids,
+      });
+      socket.emit("hand_update", { hand: game.seats[playerSeat].hand });
+    } else {
+      const completedTrick = [...game.currentTrick];
+      const winnerSeat = determineTrickWinner(
+        Object.fromEntries(
+          completedTrick.map((t) => [t.seat, t.card])
+        )
+      );
+      game.currentTurnSeat = winnerSeat;
+      game.currentTrick = [];
+      if (winnerSeat) {
+        game.tricksWon[winnerSeat] += 1;
+      }
+
+      io.to(roomId).emit("trick_won", {
+        winnerSeat,
+        trick: completedTrick,
+        currentTurnSeat: game.currentTurnSeat,
+        handsRemaining: Object.fromEntries(
+          Object.entries(game.seats).map(([sName, s]) => [sName, s.hand.length])
+        ),
+        tricksWon: game.game?.tricksWon ?? game.tricksWon,
+        bids: game.game?.bids ?? game.bids,
+      });
+
+      const winnerSocket = io.sockets.sockets.get(game.seats[winnerSeat]?.id);
+      if (winnerSocket) {
+        winnerSocket.emit("your_turn", { seat: winnerSeat });
+      }
+
+      for (const [seatName, info] of Object.entries(game.seats)) {
+        const playerSock = io.sockets.sockets.get(info.id);
+        if (playerSock) {
+          playerSock.emit("hand_update", { hand: info.hand });
+        }
+      }
+    }
+  });
+
+  socket.on("disconnect", () => {
+    console.log("disconnected:", socket.id);
+    let updated = false;
+    for (const [roomId, room] of Object.entries(rooms)) {
+      const idx = room.players.findIndex((p) => p.id === socket.id);
+      if (idx !== -1) {
+        room.players.splice(idx, 1);
+        if (room.players.length === 0) {
+          delete rooms[roomId];
+          console.log(`Room ${roomId} removed (empty)`);
+        } else {
+          io.to(roomId).emit("room_update", room);
+        }
+        updated = true;
+        break;
+      }
+    }
+    if (updated) io.emit("rooms_update", rooms);
+  });
+});
+
+const PORT = process.env.PORT || 3001;
+server.listen(PORT, () => {
+  console.log(`✔️ Server running on port ${PORT}`);
+});
