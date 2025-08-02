@@ -13,29 +13,28 @@ const App: React.FC = () => {
   const [betPopupOpen, setBetPopupOpen] = useState(false);
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [roomIdInput, setRoomIdInput] = useState("");
-  const [joinedRoom, setJoinedRoom] = useState<string | null>(null);
 
   const {
+    rooms,
+    joinedRoom,
+    setJoinedRoom,
     playerId,
-    seating,
     hand,
-    currentTurnSeat,
-    tricksWon,
     bids,
-    gameStarted,
+    tricksWon,
+    currentTurnSeat,
     currentTrick,
+    gameStarted,
     createRoom,
     joinRoom,
     placeBid,
     playCard,
-  } = useMultiplayerGameState(joinedRoom, playerName);
+  } = useMultiplayerGameState(null, playerName);
 
-  // Sync player name
   useEffect(() => {
     setPlayerName(playerName);
   }, [playerName]);
 
-  // Show bet popup when game starts
   useEffect(() => {
     if (gameStarted) {
       setBetPopupOpen(true);
@@ -47,7 +46,7 @@ const App: React.FC = () => {
     setBetPopupOpen(false);
   };
 
-  const you = playerId || "south"; // PlayerId type
+  const you = playerId || "south";
 
   const syntheticState: any = {
     bids: {
@@ -65,69 +64,101 @@ const App: React.FC = () => {
     trick: currentTrick,
     turn: currentTurnSeat,
     hands: {
-      north: [], // you could pass remaining card counts or leave empty if Table infers from tricksWon
+      north: [], // placeholder
       east: [],
       south: hand,
       west: [],
     },
-    round: 0, // adapt if your game uses round
-    // include any other fields your Table needs
+    round: 0,
   };
 
   return (
     <div className="fixed inset-0 bg-teal-800 overflow-hidden">
-      {!joinedRoom && (
-        <div className="absolute top-4 left-4 z-30 p-4 bg-white rounded shadow">
-          <div>
-            <label>
-              Name:{" "}
-              <input
-                value={playerName}
-                onChange={(e) => setPlayerNameLocal(e.target.value)}
-                className="border px-2"
-              />
-            </label>
-          </div>
-          <div className="mt-2 flex gap-2">
-            <button
-              onClick={() => {
-                createRoom();
-              }}
-              className="px-3 py-1 bg-blue-500 text-white rounded"
-            >
-              Create Room
-            </button>
+      {/* Room creation/join panel */}
+      <div className="absolute top-4 left-4 z-40 p-4 bg-white rounded shadow max-w-sm">
+        <div className="mb-2">
+          <label className="block">
+            Name:{" "}
             <input
-              placeholder="Room ID"
-              value={roomIdInput}
-              onChange={(e) => setRoomIdInput(e.target.value)}
+              value={playerName}
+              onChange={(e) => setPlayerNameLocal(e.target.value)}
               className="border px-2"
             />
-            <button
-              onClick={() => {
-                joinRoom(roomIdInput);
-                setJoinedRoom(roomIdInput);
-              }}
-              className="px-3 py-1 bg-green-500 text-white rounded"
-            >
-              Join Room
-            </button>
+          </label>
+        </div>
+        <div className="flex gap-2 mb-2">
+          <button
+            onClick={() => {
+              createRoom();
+            }}
+            className="px-3 py-1 bg-blue-500 text-white rounded"
+          >
+            Create Room
+          </button>
+          <input
+            placeholder="Room ID"
+            value={roomIdInput}
+            onChange={(e) => setRoomIdInput(e.target.value)}
+            className="border px-2 flex-grow"
+          />
+          <button
+            onClick={() => {
+              joinRoom(roomIdInput);
+              setJoinedRoom(roomIdInput);
+            }}
+            className="px-3 py-1 bg-green-500 text-white rounded"
+          >
+            Join
+          </button>
+        </div>
+        {joinedRoom && (
+          <div className="mb-1 text-sm">
+            In room: <strong>{joinedRoom}</strong>
+          </div>
+        )}
+        <div>
+          <div className="font-semibold text-xs mb-1">Available Rooms</div>
+          <div className="max-h-40 overflow-y-auto">
+            {Object.entries(rooms).map(([id, room]) => (
+              <div
+                key={id}
+                className="flex justify-between items-center mb-1 p-1 border rounded"
+              >
+                <div>
+                  <div className="text-[11px]">ID: {id}</div>
+                  <div className="text-[10px]">
+                    Players: {room.players?.length || 0}/4
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    joinRoom(id);
+                    setJoinedRoom(id);
+                  }}
+                  className="px-2 py-1 bg-indigo-600 text-white rounded text-xs"
+                >
+                  Join
+                </button>
+              </div>
+            ))}
+            {Object.keys(rooms).length === 0 && (
+              <div className="text-[12px] text-gray-600">No rooms yet</div>
+            )}
           </div>
         </div>
-      )}
+      </div>
 
+      {/* Main game UI */}
       <Table
         state={syntheticState}
         playCard={(card: any) => playCard(card)}
         you={you}
-        onEvaluateTrick={() => {
-          /* no-op: server handles it */
-        }}
+        onEvaluateTrick={() => {}}
       />
 
       {betPopupOpen && <BetPopup onSelect={handleBetSelect} />}
       {dashboardOpen && <Dashboard history={[]} onClose={() => setDashboardOpen(false)} />}
-      {/* Add GameOverPopup if you have game-over detection */}
+      {/* Add your GameOverPopup if appropriate */}
 
       <div className="absolute top-4 right-4 z-20 flex items-center space-x-2">
         <button
@@ -137,20 +168,13 @@ const App: React.FC = () => {
         >
           📜
         </button>
-        <button
-          onClick={() => {
-            // new game logic
-          }}
-          className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-        >
-          New Game
-        </button>
       </div>
 
       {gameStarted && (
         <>
           <div className="absolute top-4 left-4 z-20 bg-black bg-opacity-50 text-white px-3 py-1 rounded">
-            <span className="font-semibold">Your Bid:</span> {syntheticState.bids.south}
+            <span className="font-semibold">Your Bid:</span>{" "}
+            {syntheticState.bids.south}
           </div>
           <div className="absolute bottom-4 right-4 z-20">
             <Scoreboard bids={syntheticState.bids} tricksWon={syntheticState.tricksWon} />
