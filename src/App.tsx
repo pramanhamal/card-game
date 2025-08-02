@@ -1,234 +1,427 @@
-// src/App.tsx
-import React, { useState, useEffect } from "react";
-import { Table } from "./components/Table";
-import { Scoreboard } from "./components/Scoreboard";
-import { BetPopup } from "./components/BetPopup";
-import { Dashboard } from "./components/Dashboard";
-import { GameOverPopup } from "./components/GameOverPopup";
-import { useMultiplayerGameState } from "./hooks/useMultiplayerGameState";
-import {
-  remapHands,
-  remapTrick,
-  remapAggregates,
-  remapTurn,
-  remapNames,
-} from "./utils/seatMapping";
-import { PlayerId, Card } from "./types/spades";
+import React, { useState, useEffect, useMemo } from 'react';
+import { io, Socket } from "socket.io-client";
 
-const App: React.FC = () => {
-  const [playerName, setPlayerNameLocal] = useState("Player");
-  const [betPopupOpen, setBetPopupOpen] = useState(false);
-  const [dashboardOpen, setDashboardOpen] = useState(false);
-  const [roomIdInput, setRoomIdInput] = useState("");
+// --- Import Your Components ---
+import { Table } from './components/Table';
+import { NameInputPopup } from './components/NameInputPopup';
+import { Lobby } from './components/Lobby';
+import { GameOverPopup } from './components/GameOverPopup';
 
-  // **Fix**: pass null (or a separate external room id) instead of joinedRoom which is being returned
-  const {
-    rooms,
-    joinedRoom,
-    setJoinedRoom,
-    playerId, // canonical seat assigned by server, lowercase ("north"|"east"|"south"|"west")
-    seating,
-    hand,
-    currentTurnSeat,
-    currentTrick,
-    tricksWon,
-    bids,
-    gameStarted,
-    createRoom,
-    joinRoom,
-    placeBid,
-    playCard, // (card: Card) => void
-  } = useMultiplayerGameState(null, playerName);
+// --- Import Your Game Types ---
+import { GameState, PlayerId, Card } from './types/spades';
 
-  // Viewer seat fallback to south
-  const viewerSeat: PlayerId = playerId || "south";
+// --- SERVER URL ---
+const SERVER_URL = "https://callbreak-server.onrender.com"; // adjust if needed
 
-  // Show bet popup when a game starts
-  useEffect(() => {
-    if (gameStarted) {
-      setBetPopupOpen(true);
-    }
-  }, [gameStarted]);
+// --- Helper Types ---
+interface Player {
+  id: string;
+  name: string;
+}
+interface RoomFromServer {
+  players: Player[];
+  createdAt?: number;
+  started?: boolean;
+}
+interface Room {
+  id: string;
+  players: Player[];
+}
 
-  // Build canonical hands: only viewer has a populated hand
-  const canonicalHands: Record<PlayerId, Card[]> = {
+// Seat rotation logic so viewerSeat becomes "south"
+const SEAT_ORDER: PlayerId[] = ["north", "east", "south", "west"];
+
+function mapSeatForView(serverSeat: PlayerId, viewerSeat: PlayerId): PlayerId {
+  const viewerIndex = SEAT_ORDER.indexOf(viewerSeat);
+  const targetIndex = SEAT_ORDER.indexOf("south");
+  const rotation = (targetIndex - viewerIndex + 4) % 4;
+  const serverIndex = SEAT_ORDER.indexOf(serverSeat);
+  return SEAT_ORDER[(serverIndex + rotation) % 4];
+}
+
+function remapHands(
+  canonical: Record<PlayerId, Card[]>,
+  viewerSeat: PlayerId
+): Record<PlayerId, Card[]> {
+  const local: Record<PlayerId, Card[]> = {
     north: [],
     east: [],
     south: [],
     west: [],
   };
-  canonicalHands[viewerSeat] = hand;
+  SEAT_ORDER.forEach((serverSeat) => {
+    const localSeat = mapSeatForView(serverSeat, viewerSeat);
+    local[localSeat] = canonical[serverSeat];
+  });
+  return local;
+}
 
-  // Canonical names (from seating)
-  const canonicalNames: Record<PlayerId, string> = {
-    north: seating.north.name,
-    east: seating.east.name,
-    south: seating.south.name,
-    west: seating.west.name,
+function remapTrick(
+  trick: Record<PlayerId, Card | null>,
+  viewerSeat: PlayerId
+): Record<PlayerId, Card | null> {
+  const local: Record<PlayerId, Card | null> = {
+    north: null,
+    east: null,
+    south: null,
+    west: null,
+  };
+  SEAT_ORDER.forEach((serverSeat) => {
+    const localSeat = mapSeatForView(serverSeat, viewerSeat);
+    local[localSeat] = trick[serverSeat];
+  });
+  return local;
+}
+
+function remapAggregates<T>(
+  aggregate: Record<PlayerId, T>,
+  viewerSeat: PlayerId
+): Record<PlayerId, T> {
+  const local: Record<PlayerId, T> = {
+    north: aggregate.north,
+    east: aggregate.east,
+    south: aggregate.south,
+    west: aggregate.west,
+  } as any;
+  SEAT_ORDER.forEach((serverSeat) => {
+    const localSeat = mapSeatForView(serverSeat, viewerSeat);
+    local[localSeat] = aggregate[serverSeat];
+  });
+  return local;
+}
+
+function remapTurn(
+  canonicalTurn: PlayerId | null,
+  viewerSeat: PlayerId
+): PlayerId | null {
+  if (!canonicalTurn) return null;
+  return mapSeatForView(canonicalTurn, viewerSeat);
+}
+
+function seatToPlayerId(seat: string): PlayerId | null {
+  switch (seat.toLowerCase()) {
+    case "north":
+      return "north";
+    case "east":
+      return "east";
+    case "south":
+      return "south";
+    case "west":
+      return "west";
+    default:
+      return null;
+  }
+}
+
+// placeholder opponent hand of N unseen cards
+function makePlaceholderHand(count: number): Card[] {
+  const placeholder: Card = { suit: "clubs", rank: 2 as any };
+  return Array.from({ length: count }, () => ({ ...placeholder }));
+}
+
+const App: React.FC = () => {
+  // --- State ---
+  const [socket, setSocket] = useState<Socket | null>(null);
+  const [playerName, setPlayerName] = useState<string>('');
+  const [rooms, setRooms] = useState<Record<string, RoomFromServer>>({});
+  const [currentRoom, setCurrentRoom] = useState<Room | null>(null);
+  const [gameStarted, setGameStarted] = useState(false);
+  const [showGameStartPopup, setShowGameStartPopup] = useState(false);
+
+  // Canonical (server) game state
+  const [viewerSeat, setViewerSeat] = useState<PlayerId | null>(null);
+  const [canonicalHands, setCanonicalHands] = useState<Record<PlayerId, Card[]>>({
+    north: makePlaceholderHand(13),
+    east: makePlaceholderHand(13),
+    south: makePlaceholderHand(13),
+    west: makePlaceholderHand(13),
+  });
+  const [canonicalTrick, setCanonicalTrick] = useState<Record<PlayerId, Card | null>>({
+    north: null,
+    east: null,
+    south: null,
+    west: null,
+  });
+  const [canonicalTurn, setCanonicalTurn] = useState<PlayerId | null>(null);
+  const [canonicalTricksWon, setCanonicalTricksWon] = useState<Record<PlayerId, number>>({
+    north: 0,
+    east: 0,
+    south: 0,
+    west: 0,
+  });
+  const [canonicalBids, setCanonicalBids] = useState<Record<PlayerId, number | null>>({
+    north: null,
+    east: null,
+    south: null,
+    west: null,
+  });
+  const [seating, setSeating] = useState<Record<PlayerId, string>>({
+    north: "North",
+    east: "East",
+    south: "You",
+    west: "West",
+  });
+
+  // --- Socket setup ---
+  useEffect(() => {
+    const sock = io(SERVER_URL, {
+      withCredentials: true,
+      transports: ["websocket", "polling"],
+      path: "/socket.io",
+    });
+    setSocket(sock);
+
+    sock.on("rooms_update", (updated: Record<string, RoomFromServer>) => {
+      setRooms(updated);
+    });
+
+    sock.on("room_created", ({ roomId, room }: any) => {
+      setCurrentRoom({ id: roomId, players: room.players });
+    });
+
+    sock.on("joined_room", ({ roomId, room }: any) => {
+      setCurrentRoom({ id: roomId, players: room.players });
+    });
+
+    sock.on("room_update", ({ players }: any) => {
+      if (currentRoom) {
+        setCurrentRoom({ id: currentRoom.id, players });
+      }
+    });
+
+    sock.on("game_started", (payload: any) => {
+      const seat = seatToPlayerId(payload.yourSeat);
+      if (!seat) return;
+      setViewerSeat(seat);
+
+      const newSeating: Record<PlayerId, string> = {
+        north: payload.seats?.North?.name || "North",
+        east: payload.seats?.East?.name || "East",
+        south: payload.seats?.South?.name || "You",
+        west: payload.seats?.West?.name || "West",
+      };
+      newSeating[seat] = "You";
+      setSeating(newSeating);
+
+      setCanonicalHands((prev) => ({
+        ...prev,
+        [seat]: payload.hand || [],
+      }));
+
+      setCanonicalTurn(seatToPlayerId(payload.currentTurnSeat));
+
+      setCanonicalTricksWon({
+        north: payload.tricksWon?.North ?? 0,
+        east: payload.tricksWon?.East ?? 0,
+        south: payload.tricksWon?.South ?? 0,
+        west: payload.tricksWon?.West ?? 0,
+      });
+
+      if (payload.bids) {
+        setCanonicalBids({
+          north: payload.bids?.North ?? null,
+          east: payload.bids?.East ?? null,
+          south: payload.bids?.South ?? null,
+          west: payload.bids?.West ?? null,
+        });
+      }
+
+      setCanonicalTrick({
+        north: null,
+        east: null,
+        south: null,
+        west: null,
+      });
+
+      setGameStarted(true);
+      setShowGameStartPopup(true);
+      setTimeout(() => setShowGameStartPopup(false), 2500);
+    });
+
+    sock.on("trick_update", (p: any) => {
+      if (p.currentTrick) {
+        const newTrick: Record<PlayerId, Card | null> = {
+          north: null,
+          east: null,
+          south: null,
+          west: null,
+        };
+        p.currentTrick.forEach((t: any) => {
+          const pid = seatToPlayerId(t.seat);
+          if (pid) newTrick[pid] = t.card;
+        });
+        setCanonicalTrick(newTrick);
+      }
+      if (p.currentTurnSeat) {
+        setCanonicalTurn(seatToPlayerId(p.currentTurnSeat));
+      }
+      if (p.tricksWon) {
+        setCanonicalTricksWon({
+          north: p.tricksWon?.North ?? canonicalTricksWon.north,
+          east: p.tricksWon?.East ?? canonicalTricksWon.east,
+          south: p.tricksWon?.South ?? canonicalTricksWon.south,
+          west: p.tricksWon?.West ?? canonicalTricksWon.west,
+        });
+      }
+    });
+
+    sock.on("trick_won", (p: any) => {
+      setCanonicalTrick({ north: null, east: null, south: null, west: null });
+      if (p.currentTurnSeat) {
+        setCanonicalTurn(seatToPlayerId(p.currentTurnSeat));
+      }
+      if (p.tricksWon) {
+        setCanonicalTricksWon({
+          north: p.tricksWon?.North ?? canonicalTricksWon.north,
+          east: p.tricksWon?.East ?? canonicalTricksWon.east,
+          south: p.tricksWon?.South ?? canonicalTricksWon.south,
+          west: p.tricksWon?.West ?? canonicalTricksWon.west,
+        });
+      }
+    });
+
+    sock.on("bids_update", (updatedBids: any) => {
+      setCanonicalBids({
+        north: updatedBids?.North ?? null,
+        east: updatedBids?.East ?? null,
+        south: updatedBids?.South ?? null,
+        west: updatedBids?.West ?? null,
+      });
+    });
+
+    return () => {
+      sock.off("rooms_update");
+      sock.off("room_created");
+      sock.off("joined_room");
+      sock.off("room_update");
+      sock.off("game_started");
+      sock.off("trick_update");
+      sock.off("trick_won");
+      sock.off("bids_update");
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentRoom]);
+
+  // --- Event emitters ---
+  const handleNameSubmit = (name: string) => {
+    setPlayerName(name);
+    socket?.emit("set_player_name", name);
   };
 
-  // Local (rotated) views so viewerSeat becomes "south"
-  const localHands = remapHands(canonicalHands, viewerSeat);
-  const localTrick = remapTrick(
-    currentTrick || { north: null, east: null, south: null, west: null },
-    viewerSeat
+  const handleCreateRoom = () => {
+    socket?.emit("create_room");
+  };
+
+  const handleJoinRoom = (roomId: string) => {
+    socket?.emit("join_room", roomId);
+    setCurrentRoom({ id: roomId, players: currentRoom?.players || [] });
+  };
+
+  const handlePlayCard = (player: PlayerId, card: Card) => {
+    if (player !== "south") return; // local viewer
+    if (!currentRoom) return;
+    socket?.emit("play_card", { roomId: currentRoom.id, card });
+  };
+
+  // --- Derived rotated GameState ---
+  const localGameState: GameState = useMemo(() => {
+    if (!viewerSeat) {
+      return {
+        trick: { north: null, east: null, south: null, west: null },
+        round: 0,
+        turn: "south",
+        hands: { north: [], east: [], south: [], west: [] },
+        tricksWon: { north: 0, east: 0, south: 0, west: 0 },
+        bids: { north: null, east: null, south: null, west: null },
+        scores: { north: 0, east: 0, south: 0, west: 0 },
+        deck: [],
+      } as GameState;
+    }
+
+    return {
+      trick: remapTrick(canonicalTrick, viewerSeat),
+      round: 0,
+      turn: (remapTurn(canonicalTurn, viewerSeat) ?? "south") as PlayerId,
+      hands: remapHands(canonicalHands, viewerSeat),
+      tricksWon: remapAggregates(canonicalTricksWon, viewerSeat),
+      bids: remapAggregates(canonicalBids, viewerSeat),
+      scores: { north: 0, east: 0, south: 0, west: 0 },
+      deck: [],
+    } as GameState;
+  }, [canonicalHands, canonicalTrick, canonicalTurn, canonicalTricksWon, canonicalBids, viewerSeat]);
+
+  // --- Lobby rooms converted to required shape ---
+  const lobbyRooms: Record<string, Room> = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.entries(rooms).map(([id, r]) => [
+          id,
+          { id, players: r.players },
+        ])
+      ) as Record<string, Room>,
+    [rooms]
   );
-  const localBids = remapAggregates(bids as any, viewerSeat);
-  const localTricksWon = remapAggregates(tricksWon as any, viewerSeat);
-  const localTurn = remapTurn(currentTurnSeat, viewerSeat);
-  const localNames = remapNames(canonicalNames, viewerSeat);
 
-  // Synthetic state passed into Table/Scoreboard
-  const syntheticState: any = {
-    bids: localBids,
-    tricksWon: localTricksWon,
-    trick: localTrick,
-    turn: localTurn,
-    hands: localHands,
-    round: 0,
-  };
+  // --- UI Flow ---
+  if (!playerName) {
+    return <NameInputPopup onNameSubmit={handleNameSubmit} />;
+  }
 
-  const handleBetSelect = (n: number) => {
-    placeBid(n);
-    setBetPopupOpen(false);
-  };
+  if (showGameStartPopup && currentRoom) {
+    return (
+      <div className="fixed inset-0 bg-teal-800 flex items-center justify-center">
+        <div className="bg-white p-8 rounded-lg shadow-xl text-2xl font-bold animate-pulse">
+          All players are in! Starting the game...
+        </div>
+      </div>
+    );
+  }
 
-  // Adapter to satisfy Table's expected signature: (player, card)
-  const handleTablePlayCard = (player: PlayerId, card: Card) => {
-    if (player !== "south") return; // only local viewer plays
-    playCard(card);
-  };
+  if (gameStarted && currentRoom) {
+    return (
+      <div className="fixed inset-0 bg-teal-800 overflow-hidden">
+        <Table
+          state={localGameState}
+          playCard={handlePlayCard}
+          you="south"
+          onEvaluateTrick={() => {}}
+          nameMap={{
+            north: seating.north,
+            east: seating.east,
+            south: seating.south,
+            west: seating.west,
+          }}
+        />
+      </div>
+    );
+  }
 
-  return (
-    <div className="fixed inset-0 bg-teal-800 overflow-hidden">
-      {/* Lobby / room panel */}
-      <div className="absolute top-4 left-4 z-50 p-4 bg-white rounded shadow max-w-md w-full md:w-auto">
-        <div className="flex flex-col gap-2">
-          <div className="flex flex-wrap gap-2 items-end">
-            <div>
-              <label className="text-xs block">
-                Name:
-                <input
-                  aria-label="Player name"
-                  value={playerName}
-                  onChange={(e) => setPlayerNameLocal(e.target.value)}
-                  className="ml-1 border px-2 py-1 rounded text-sm"
-                />
-              </label>
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => createRoom()}
-                className="px-3 py-1 bg-blue-500 text-white rounded text-xs"
-              >
-                Create Room
-              </button>
-              <input
-                aria-label="Room ID"
-                placeholder="Room ID"
-                value={roomIdInput}
-                onChange={(e) => setRoomIdInput(e.target.value)}
-                className="border px-2 py-1 rounded text-xs"
-              />
-              <button
-                onClick={() => {
-                  joinRoom(roomIdInput);
-                  setJoinedRoom(roomIdInput); // optional immediate UI update
-                }}
-                className="px-3 py-1 bg-green-500 text-white rounded text-xs"
-              >
-                Join
-              </button>
-            </div>
-          </div>
-
-          {joinedRoom && (
-            <div className="text-sm">
-              In room: <strong>{joinedRoom}</strong> ({rooms?.[joinedRoom]?.players?.length ?? 0}/4)
-            </div>
-          )}
-
-          <div className="mt-1">
-            <div className="font-semibold text-[11px] mb-1">Available Rooms</div>
-            <div className="max-h-40 overflow-y-auto space-y-1">
-              {Object.entries(rooms || {}).map(([id, room]) => (
-                <div
-                  key={id}
-                  className="flex justify-between items-center p-2 border rounded bg-gray-50 text-xs"
-                >
-                  <div className="flex flex-col">
-                    <div>
-                      <span className="font-medium">ID:</span> {id}
-                    </div>
-                    <div>
-                      <span className="font-medium">Players:</span>{" "}
-                      {room.players?.length ?? 0}/4
-                    </div>
-                  </div>
-                  <div className="flex gap-1">
-                    <button
-                      onClick={() => {
-                        joinRoom(id);
-                        setJoinedRoom(id);
-                      }}
-                      className="px-2 py-1 bg-indigo-600 text-white rounded text-xs"
-                    >
-                      Join
-                    </button>
-                  </div>
-                </div>
-              ))}
-              {Object.keys(rooms || {}).length === 0 && (
-                <div className="text-[12px] text-gray-600">No rooms yet</div>
-              )}
-            </div>
+  if (currentRoom) {
+    return (
+      <div className="fixed inset-0 bg-teal-800 flex items-center justify-center text-white text-2xl">
+        <div className="bg-black bg-opacity-50 p-10 rounded-lg text-center shadow-lg">
+          <h2 className="text-3xl font-bold mb-4">
+            Room: {currentRoom.players[0]?.name}'s Game
+          </h2>
+          <p className="mb-6">
+            Waiting for players... ({currentRoom.players.length}/4)
+          </p>
+          <div className="space-y-2">
+            {currentRoom.players.map(p => (
+              <p key={p.id}>{p.name} has joined.</p>
+            ))}
           </div>
         </div>
       </div>
+    );
+  }
 
-      {/* Game table */}
-      <Table
-        state={syntheticState}
-        playCard={handleTablePlayCard}
-        you="south"
-        onEvaluateTrick={() => {}}
-        nameMap={{
-          north: localNames.north,
-          east: localNames.east,
-          south: localNames.south,
-          west: localNames.west,
-        }}
-      />
-
-      {/* Overlays */}
-      {betPopupOpen && <BetPopup onSelect={handleBetSelect} />}
-      {dashboardOpen && <Dashboard history={[]} onClose={() => setDashboardOpen(false)} />}
-      {/* GameOverPopup could be conditionally rendered here */}
-      {/* <GameOverPopup totalScores={{}} onPlayAgain={() => {}} /> */}
-
-      {/* Controls */}
-      <div className="absolute top-4 right-4 z-30 flex items-center space-x-2">
-        <button
-          onClick={() => setDashboardOpen(true)}
-          className="p-2 bg-gray-700 text-white rounded-full hover:bg-gray-600"
-          aria-label="Show Game History"
-        >
-          📜
-        </button>
-      </div>
-
-      {/* Scoreboard & bid */}
-      {gameStarted && (
-        <>
-          <div className="absolute top-16 left-4 z-20 bg-black bg-opacity-60 text-white px-3 py-1 rounded text-sm">
-            <span className="font-semibold">Your Bid:</span> {syntheticState.bids.south}
-          </div>
-          <div className="absolute bottom-4 right-4 z-20">
-            <Scoreboard bids={syntheticState.bids} tricksWon={syntheticState.tricksWon} />
-          </div>
-        </>
-      )}
-    </div>
+  return (
+    <Lobby
+      rooms={lobbyRooms}
+      onCreateRoom={handleCreateRoom}
+      onJoinRoom={handleJoinRoom}
+    />
   );
 };
 

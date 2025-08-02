@@ -1,282 +1,172 @@
-// src/components/Table.tsx
-import React, { useMemo } from "react";
-import { PlayerId, Card } from "../types/spades";
-import { legalMoves } from "../utils/gameLogic";
-
-export interface TableState {
-  hands?: Record<PlayerId, Card[]>;
-  trick?: Record<PlayerId, Card | null>;
-  turn?: PlayerId; // changed: no null, only optional
-  bids?: Record<PlayerId, number | null>;
-  tricksWon?: Record<PlayerId, number>;
-  round?: number;
-  spadesBroken?: boolean; // optional, used by legalMoves
-}
+import React, { useState, useEffect, useRef } from 'react';
+import { GameState, PlayerId, Card as CardType } from '../types/spades';
+import { Opponent } from './Opponent';
+import { Card } from './Card';
+import { TrickPile } from './TrickPile';
+import { legalMoves, determineTrickWinner } from '../utils/gameLogic';
 
 export interface TableProps {
-  state: TableState;
-  playCard: (player: PlayerId, card: Card) => void;
-  you: PlayerId; // in local view this is always "south"
+  state: GameState;
+  playCard: (player: PlayerId, card: CardType) => void;
+  you: PlayerId;
   onEvaluateTrick: () => void;
-  nameMap?: Record<PlayerId, string>;
+  nameMap?: Record<PlayerId, string>; // added to support dynamic names
 }
 
 const defaultNameMap: Record<PlayerId, string> = {
-  north: "North",
-  east: "East",
-  south: "You",
-  west: "West",
+  north: 'North',
+  west: 'West',
+  east: 'East',
+  south: 'You',
 };
 
-const suitEmoji: Record<string, string> = {
-  clubs: "♣",
-  diamonds: "♦",
-  hearts: "♥",
-  spades: "♠",
-};
-
-const rankOrder: string[] = [
-  "2",
-  "3",
-  "4",
-  "5",
-  "6",
-  "7",
-  "8",
-  "9",
-  "10",
-  "J",
-  "Q",
-  "K",
-  "A",
+// Global rank ordering
+const rankOrder: Array<number | 'J' | 'Q' | 'K' | 'A'> = [
+  2, 3, 4, 5, 6, 7, 8, 9, 10, 'J', 'Q', 'K', 'A'
 ];
 
-/**
- * Simple comparator: sort by suit (clubs, diamonds, hearts, spades) then rank.
- */
-function sortHand(cards: Card[]): Card[] {
-  const suitOrder = ["clubs", "diamonds", "hearts", "spades"];
-  return [...cards].sort((a, b) => {
-    const suitDiff =
-      suitOrder.indexOf(a.suit) - suitOrder.indexOf(b.suit);
-    if (suitDiff !== 0) return suitDiff;
-    return rankOrder.indexOf(a.rank) - rankOrder.indexOf(b.rank);
-  });
+// Helper: sort cards by rank ascending
+function sortByRank(cards: CardType[]) {
+  return [...cards].sort(
+    (a, b) => rankOrder.indexOf(a.rank as any) - rankOrder.indexOf(b.rank as any)
+  );
 }
 
-export function Table({
+export const Table: React.FC<TableProps> = ({
   state,
   playCard,
   you,
   onEvaluateTrick,
   nameMap = defaultNameMap,
-}: TableProps) {
-  const hands = state.hands ?? {
-    north: [],
-    east: [],
-    south: [],
-    west: [],
-  };
-  const trick = state.trick ?? {
-    north: null,
-    east: null,
-    south: null,
-    west: null,
-  };
-  const turn = state.turn ?? undefined;
-  const bids = state.bids ?? {
-    north: null,
-    east: null,
-    south: null,
-    west: null,
-  };
-  const tricksWon = state.tricksWon ?? {
-    north: 0,
-    east: 0,
-    south: 0,
-    west: 0,
-  };
+}) => {
+  const { trick, round, turn, hands, tricksWon } = state;
 
-  // Legal cards for the current viewer (only if it's their turn)
-  const legalForYou = useMemo(
-    () => (turn === you ? legalMoves(state as any, you) : []),
-    [state, you, turn]
+  //
+  // 1) Delay your “active turn” UI by 500 ms
+  //
+  const trickIsFull = Object.values(trick).every(c => c !== null);
+  const isMyTurn = turn === you && !trickIsFull;
+  const [isActive, setIsActive] = useState(false);
+
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    if (isMyTurn) {
+      timer = setTimeout(() => setIsActive(true), 500);
+    } else {
+      setIsActive(false);
+    }
+    return () => clearTimeout(timer);
+  }, [isMyTurn]);
+
+  const legalSet = new Set(
+    isActive
+      ? legalMoves(state, you).map(c => `${c.suit}-${c.rank}`)
+      : []
   );
 
-  // Helpers to display current played card
-  const getPlayedCard = (seat: PlayerId) => trick[seat];
-  const isYourTurn = turn === you;
+  //
+  // 2) Track the *real* trick winner as soon as the 4th card lands
+  //
+  const [lastWinner, setLastWinner] = useState<PlayerId | null>(null);
+  const prevTrickRef = useRef(trick);
 
-  const handleCardClick = (card: Card) => {
-    if (!isYourTurn) return;
-    const isLegal = legalForYou.some(
-      (c) => c.suit === card.suit && c.rank === card.rank
-    );
-    if (!isLegal) return;
-    playCard(you, card);
-  };
+  useEffect(() => {
+    const prevCount = Object.values(prevTrickRef.current).filter(c => c !== null).length;
+    const currCount = Object.values(trick).filter(c => c !== null).length;
 
-  // Render hand (only full visible for 'you')
-  const renderHand = (cards: Card[]) => {
-    if (!cards) return null;
-    const sorted = sortHand(cards);
-    return (
-      <div className="flex gap-1 overflow-x-auto py-2">
-        {sorted.map((c, i) => {
-          const legal =
-            isYourTurn &&
-            legalForYou.some(
-              (lm) => lm.suit === c.suit && lm.rank === c.rank
-            );
+    if (prevCount < 4 && currCount === 4) {
+      setLastWinner(determineTrickWinner(trick));
+    }
+    if (currCount === 0) {
+      setLastWinner(null);
+    }
+
+    prevTrickRef.current = trick;
+  }, [trick]);
+
+  //
+  // 3) Build your sorted, fanned hand directly on each render
+  //
+  const yourHand = hands[you];
+  const firstCard = yourHand[0];
+  const firstIsBlack = firstCard
+    ? (firstCard.suit === 'spades' || firstCard.suit === 'clubs')
+    : false;
+
+  const suitsInHand = Array.from(new Set(yourHand.map(c => c.suit)));
+  const redSuits = suitsInHand.filter(s => s === 'hearts' || s === 'diamonds').sort();
+  const blackSuits = suitsInHand.filter(s => s === 'spades' || s === 'clubs').sort();
+  const groupLists = firstIsBlack ? [blackSuits, redSuits] : [redSuits, blackSuits];
+  const indices: [number, number] = [0, 0];
+  const suitOrder: string[] = [];
+  let g = 0;
+  while (suitOrder.length < suitsInHand.length) {
+    const list = groupLists[g];
+    const idx = indices[g]++;
+    if (idx < list.length) suitOrder.push(list[idx]);
+    g = 1 - g;
+  }
+  const sortedHand = suitOrder.flatMap(suit =>
+    sortByRank(yourHand.filter(c => c.suit === suit))
+  );
+
+  return (
+    <div className="relative w-full h-full bg-teal-800">
+      <TrickPile
+        trick={state.trick}
+        winner={lastWinner}
+        onFlyOutEnd={onEvaluateTrick}
+      />
+
+      <div className="absolute top-4 left-4 bg-black bg-opacity-50 text-white px-3 py-1 rounded">
+        Round: {round} | Turn: {turn === you ? 'You' : nameMap[turn]}
+      </div>
+
+      <Opponent position="north" name={nameMap.north} cardsCount={hands.north.length} tricks={tricksWon.north} />
+      <Opponent position="west" name={nameMap.west} cardsCount={hands.west.length} tricks={tricksWon.west} />
+      <Opponent position="east" name={nameMap.east} cardsCount={hands.east.length} tricks={tricksWon.east} />
+
+      <div
+        className="absolute inset-x-0 bottom-0 h-48 flex justify-center pointer-events-auto transition-all duration-300"
+        style={{
+          filter: isActive
+            ? 'drop-shadow(0 0 20px rgba(255, 255, 100, 0.4))'
+            : 'none',
+        }}
+      >
+        {sortedHand.map((c, i) => {
+          const total = sortedHand.length;
+          const spread = 70;
+          const angle = total > 1
+            ? -spread / 2 + (spread / (total - 1)) * i
+            : 0;
+
+          const key = `${c.suit}-${c.rank}`;
+          const canPlay = isActive && legalSet.has(key);
+          const scale = canPlay ? 1.15 : 1;
+          const translateY = canPlay ? -100 : -80;
+
           return (
             <div
-              key={`${c.suit}-${c.rank}-${i}`}
-              onClick={() => handleCardClick(c)}
-              className={`relative cursor-pointer select-none border rounded-md px-2 py-1 min-w-[48px] flex flex-col items-center justify-center text-xs font-medium
-                ${
-                  legal
-                    ? "ring-2 ring-yellow-400"
-                    : isYourTurn
-                    ? "opacity-80"
-                    : "opacity-60"
-                } bg-white shadow`}
-              aria-label={`${c.rank} of ${c.suit}`}
-              title={
-                legal
-                  ? `${c.rank}${suitEmoji[c.suit]} (legal)`
-                  : `${c.rank}${suitEmoji[c.suit]}`
-              }
+              key={key + "-" + i}
+              className="absolute transition-transform duration-300 ease-in-out"
+              style={{
+                transform: `rotate(${angle}deg) translateY(${translateY}px) scale(${scale})`,
+                transformOrigin: '50% 100%',
+              }}
             >
-              <div className="flex flex-col items-center">
-                <div>{c.rank}</div>
-                <div>{suitEmoji[c.suit]}</div>
+              <div
+                onClick={canPlay ? () => playCard(you, c) : undefined}
+                className={`inline-block rounded-md ${
+                  canPlay ? 'cursor-pointer' : 'pointer-events-none cursor-not-allowed'
+                }`}
+              >
+                <Card card={c} faceUp />
               </div>
-              {isYourTurn && legal && (
-                <div className="absolute -top-1 -right-1 bg-green-500 text-white text-[9px] rounded-full px-1">
-                  ✔
-                </div>
-              )}
             </div>
           );
         })}
       </div>
-    );
-  };
-
-  // Opponent / seat info card
-  const Opponent = ({
-    position,
-    name,
-  }: {
-    position: PlayerId;
-    name: string;
-  }) => {
-    const played = getPlayedCard(position);
-    return (
-      <div className="flex flex-col items-center text-center">
-        <div className="text-[10px] font-semibold">{name}</div>
-        <div className="text-[9px]">Bid: {bids[position] ?? "-"}</div>
-        <div className="text-[9px]">Won: {tricksWon[position]}</div>
-        <div className="mt-1">
-          {played ? (
-            <div className="inline-block border rounded px-2 py-1 text-xs bg-white">
-              <div>{played.rank}</div>
-              <div>{suitEmoji[played.suit]}</div>
-            </div>
-          ) : (
-            <div className="inline-block border rounded px-3 py-2 bg-gray-200 text-[10px]">
-              {position !== you ? (
-                <div>{hands[position]?.length ?? 0} cards</div>
-              ) : (
-                <div>Your hand</div>
-              )}
-            </div>
-          )}
-        </div>
-        {turn === position && (
-          <div className="mt-1 text-[10px] font-bold text-green-400">
-            ▶️ turn
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  return (
-    <div className="w-full h-full relative flex flex-col items-center justify-center text-white">
-      {/* North */}
-      <div className="absolute top-4 flex flex-col items-center gap-1">
-        <Opponent position="north" name={nameMap.north} />
-      </div>
-
-      {/* West */}
-      <div className="absolute left-4 top-1/2 transform -translate-y-1/2 flex flex-col items-center gap-1">
-        <Opponent position="west" name={nameMap.west} />
-      </div>
-
-      {/* East */}
-      <div className="absolute right-4 top-1/2 transform -translate-y-1/2 flex flex-col items-center gap-1">
-        <Opponent position="east" name={nameMap.east} />
-      </div>
-
-      {/* Center trick display */}
-      <div className="flex flex-col items-center gap-2">
-        <div className="text-sm mb-1">
-          {state.round !== undefined && <>Round {state.round}</>}
-        </div>
-        <div className="grid grid-cols-3 gap-4 items-center">
-          <div className="invisible">.</div>
-          <div className="flex flex-col items-center">
-            <div className="text-[10px] mb-1">Current Trick</div>
-            <div className="flex gap-2">
-              {(["north", "east", "south", "west"] as PlayerId[]).map(
-                (seat) => {
-                  const card = trick[seat];
-                  return (
-                    <div
-                      key={`trick-${seat}`}
-                      className="flex flex-col items-center text-center"
-                    >
-                      <div className="text-[9px]">{nameMap[seat]}</div>
-                      {card ? (
-                        <div className="border rounded px-2 py-1 bg-white text-black text-xs min-w-[40px]">
-                          <div>{card.rank}</div>
-                          <div>{suitEmoji[card.suit]}</div>
-                        </div>
-                      ) : (
-                        <div className="border rounded px-3 py-2 bg-gray-700 text-[10px] min-w-[40px]">
-                          —
-                        </div>
-                      )}
-                      {turn === seat && (
-                        <div className="text-[10px] text-green-300 mt-1">
-                          {seat === you ? "Your turn" : "Turn"}
-                        </div>
-                      )}
-                    </div>
-                  );
-                }
-              )}
-            </div>
-          </div>
-          <div className="invisible">.</div>
-        </div>
-      </div>
-
-      {/* South (you) */}
-      <div className="absolute bottom-4 w-full flex flex-col items-center">
-        <div className="mb-2 flex gap-4">
-          <Opponent position="south" name={nameMap.south} />
-        </div>
-        <div className="w-full max-w-3xl">
-          {renderHand(hands[you] || [])}
-          {!isYourTurn && (
-            <div className="mt-1 text-[12px] text-gray-200">
-              Waiting for turn...
-            </div>
-          )}
-        </div>
-      </div>
     </div>
   );
-}
+};
