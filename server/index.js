@@ -3,102 +3,126 @@ const express = require('express');
 const http = require('http');
 const { Server } = require("socket.io");
 const cors = require('cors');
+const crypto = require('crypto');
+
+// Set this to your frontend origin; on Render you can inject via env var
+const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || "https://callbreak-hxwr.onrender.com";
 
 const app = express();
-app.use(cors());
+
+// Allow CORS for the frontend, including credentialed requests if you ever use them
+app.use(
+  cors({
+    origin: FRONTEND_ORIGIN,
+    credentials: true,
+  })
+);
+
+// Simple health check
+app.get("/", (req, res) => res.send("✔️ Multiplayer server is alive"));
 
 const server = http.createServer(app);
-
 const io = new Server(server, {
   cors: {
-    origin: "*", // Allows connections from any origin, including your Render frontend
-    methods: ["GET", "POST"]
-  }
+    origin: FRONTEND_ORIGIN,
+    methods: ["GET", "POST"],
+    credentials: true,
+  },
+  path: "/socket.io",
 });
 
-let rooms = {}; // This object will store all active game rooms
+// In-memory room store
+const rooms = {}; // { roomId: { players: [ { id, name } ], createdAt, ... } }
 
-io.on('connection', (socket) => {
-  console.log(`User Connected: ${socket.id}`);
+function makeRoomId() {
+  // random 6-character hex string
+  return crypto.randomBytes(3).toString("hex");
+}
 
-  // When a player provides their name and enters the lobby
-  socket.on('join_lobby', (playerName) => {
-    socket.data.playerName = playerName;
-    // Send the current list of rooms to the newly connected player
-    socket.emit('rooms_update', rooms);
+io.on("connection", (socket) => {
+  console.log("socket connected:", socket.id);
+
+  // Default player name (can be overridden by client)
+  socket.data.playerName = `Player_${socket.id.slice(0, 5)}`;
+
+  socket.on("set_player_name", (name) => {
+    if (typeof name === "string" && name.trim()) {
+      socket.data.playerName = name.trim();
+    }
   });
 
-  // When a player clicks "Create Room"
-  socket.on('create_room', () => {
-    // Generate a unique Room ID
-    const roomId = `room_${socket.id}`;
-    // Create the room object
+  // Create a new room
+  socket.on("create_room", () => {
+    const roomId = makeRoomId();
     rooms[roomId] = {
-        id: roomId,
-        players: [],
-        gameState: null // Game state will be added later
+      players: [{ id: socket.id, name: socket.data.playerName }],
+      createdAt: Date.now(),
     };
-    // Have the socket join the room
     socket.join(roomId);
-    // Add the creator as the first player
-    rooms[roomId].players.push({ id: socket.id, name: socket.data.playerName });
-
-    // Send confirmation to the player that they have joined the room
-    socket.emit('joined_room', rooms[roomId]);
-    
-    // Send the updated room list to everyone in the lobby
-    io.emit('rooms_update', rooms);
+    io.emit("rooms_update", rooms);
     console.log(`Room created: ${roomId} by ${socket.data.playerName}`);
   });
 
-  // When a player clicks "Join" on an existing room
-  socket.on('join_room', (roomId) => {
-    if (rooms[roomId] && rooms[roomId].players.length < 4) {
-      socket.join(roomId);
-      rooms[roomId].players.push({ id: socket.id, name: socket.data.playerName });
-
-      // If the room is now full, trigger the game to start for everyone in that room
-      if (rooms[roomId].players.length === 4) {
-        console.log(`Game starting in room ${roomId}`);
-        io.to(roomId).emit('start_game', {
-          message: 'All players are in! The game will now begin.',
-          room: rooms[roomId]
-        });
-      } else {
-        // If the room is not yet full, just update its state for all players inside it
-        io.to(roomId).emit('room_update', rooms[roomId]);
-      }
-
-      // Update the lobby list for everyone
-      io.emit('rooms_update', rooms);
+  // Join existing room
+  socket.on("join_room", (roomId) => {
+    const room = rooms[roomId];
+    if (!room) {
+      socket.emit("error", { message: "Room does not exist", roomId });
+      return;
     }
+
+    if (room.players.find((p) => p.id === socket.id)) {
+      // already in room
+      return;
+    }
+
+    if (room.players.length >= 4) {
+      socket.emit("room_full", roomId);
+      return;
+    }
+
+    socket.join(roomId);
+    room.players.push({ id: socket.id, name: socket.data.playerName });
+
+    if (room.players.length === 4) {
+      console.log(`Game starting in room ${roomId}`);
+      io.to(roomId).emit("start_game", {
+        message: "All players are in! The game will now begin.",
+        room,
+      });
+    } else {
+      io.to(roomId).emit("room_update", room);
+    }
+
+    io.emit("rooms_update", rooms);
   });
 
-  // Handle player disconnections
-  socket.on('disconnect', () => {
-    console.log(`User Disconnected: ${socket.id}`);
-    for (const roomId in rooms) {
-      const room = rooms[roomId];
-      const playerIndex = room.players.findIndex(p => p.id === socket.id);
+  // Handle disconnects
+  socket.on("disconnect", () => {
+    console.log("socket disconnected:", socket.id);
+    let updated = false;
 
-      if (playerIndex !== -1) {
-        // Remove the player from the room
-        room.players.splice(playerIndex, 1);
-        
-        // If the room is now empty, delete it
+    for (const [roomId, room] of Object.entries(rooms)) {
+      const idx = room.players.findIndex((p) => p.id === socket.id);
+      if (idx !== -1) {
+        room.players.splice(idx, 1);
         if (room.players.length === 0) {
           delete rooms[roomId];
+          console.log(`Room ${roomId} deleted (empty)`);
         } else {
-          // Otherwise, notify the remaining players
-          io.to(roomId).emit('room_update', room);
+          io.to(roomId).emit("room_update", room);
         }
-        
-        // Update the lobby for everyone
-        io.emit('rooms_update', rooms);
-        break;
+        updated = true;
+        break; // assuming one room per socket
       }
     }
+
+    if (updated) {
+      io.emit("rooms_update", rooms);
+    }
   });
+
+  // Extend with other game events here...
 });
 
 const PORT = process.env.PORT || 3001;
