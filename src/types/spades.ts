@@ -4,15 +4,15 @@ export type PlayerId = "north" | "east" | "south" | "west";
 
 export type Suit = "clubs" | "diamonds" | "hearts" | "spades";
 export type Rank =
-  | "2"
-  | "3"
-  | "4"
-  | "5"
-  | "6"
-  | "7"
-  | "8"
-  | "9"
-  | "10"
+  | 2
+  | 3
+  | 4
+  | 5
+  | 6
+  | 7
+  | 8
+  | 9
+  | 10
   | "J"
   | "Q"
   | "K"
@@ -24,21 +24,20 @@ export interface Card {
 }
 
 export interface GameState {
-  trick: Record<PlayerId, Card | null>;
-  round: number;
-  turn: PlayerId | null;
+  deck: Card[];
   hands: Record<PlayerId, Card[]>;
+  trick: Record<PlayerId, Card | null>;
+  scores: Record<PlayerId, number>;
   tricksWon: Record<PlayerId, number>;
-  bids: Record<PlayerId, number | null>;
-  spadesBroken: boolean;
+  turn: PlayerId;
+  round: number;
+  bids: Record<PlayerId, number>;
 }
 
-// ← This was missing; add it:
 export interface GameResult {
-  handNumber: number;
-  bids: Record<PlayerId, number | null>;
-  tricksWon: Record<PlayerId, number>;
+  gameId: number;
   scores: Record<PlayerId, number>;
+  bids: Record<PlayerId, number>;
+  tricksWon: Record<PlayerId, number>;
   totalScores: Record<PlayerId, number>;
-  winner: PlayerId | null;
 }

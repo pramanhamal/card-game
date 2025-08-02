@@ -3,49 +3,17 @@ import express from "express";
 import http from "http";
 import { Server } from "socket.io";
 import { customAlphabet } from "nanoid";
+import {
+  initializeGame,
+  playCard,
+  evaluateTrick,
+  calculateScores,
+} from "../src/utils/gameLogic.js"; // adjust path if compiled
+
+// NOTE: If you compile TS to JS, adjust imports. This assumes ESM.
 
 const app = express();
 const server = http.createServer(app);
-
-// seat order
-const SEAT_ORDER = ["north", "east", "south", "west"];
-const RANKS = ["2","3","4","5","6","7","8","9","10","J","Q","K","A"];
-const SUITS = ["clubs","diamonds","hearts","spades"];
-
-// helpers
-function createDeck() {
-  const deck = [];
-  for (const suit of SUITS) {
-    for (const rank of RANKS) {
-      deck.push({ suit, rank });
-    }
-  }
-  return deck;
-}
-function shuffle(arr) {
-  const a = [...arr];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
-function dealHands() {
-  const deck = shuffle(createDeck());
-  return {
-    north: deck.slice(0, 13),
-    east: deck.slice(13, 26),
-    south: deck.slice(26, 39),
-    west: deck.slice(39, 52),
-  };
-}
-function capitalizeSeat(seat) {
-  return seat[0].toUpperCase() + seat.slice(1);
-}
-
-// in-memory rooms
-const rooms = new Map(); // roomId -> room object
-
 const io = new Server(server, {
   path: "/socket.io",
   cors: {
@@ -55,32 +23,26 @@ const io = new Server(server, {
   },
 });
 
-function broadcastLobby() {
-  const simplified = {};
-  for (const [roomId, room] of rooms.entries()) {
-    simplified[roomId] = {
-      players: Array.from(room.players.values()).map(p => ({ id: p.socketId, name: p.name })),
-      started: !!room.started,
-    };
-  }
-  io.emit("rooms_update", simplified);
-}
+// In-memory room store
+/** roomId -> { players: Map<socketId, { socketId, name }>, gameState: GameState | null } */
+const rooms = new Map();
 
-function assignSeatsByJoinOrder(playerEntries) {
-  const seating = {};
-  for (let i = 0; i < playerEntries.length && i < 4; i++) {
-    const seat = SEAT_ORDER[i];
-    seating[seat] = {
-      socketId: playerEntries[i].socketId,
-      name: playerEntries[i].name,
+function broadcastLobby() {
+  const summary = {};
+  for (const [roomId, room] of rooms.entries()) {
+    summary[roomId] = {
+      players: Array.from(room.players.values()).map((p) => ({
+        id: p.socketId,
+        name: p.name,
+      })),
+      hasStarted: !!room.gameState,
     };
   }
-  return seating;
+  io.emit("rooms_update", summary);
 }
 
 io.on("connection", (socket) => {
-  socket.data.name = `Anon-${socket.id.slice(0,4)}`;
-  console.log("connected:", socket.id);
+  socket.data.name = `Anon-${socket.id.slice(0, 4)}`;
   broadcastLobby();
 
   socket.on("set_player_name", (name) => {
@@ -90,20 +52,15 @@ io.on("connection", (socket) => {
   socket.on("create_room", () => {
     const nano = customAlphabet("abcdefghijklmnopqrstuvwxyz0123456789", 6);
     const roomId = nano();
-    const room = {
-      players: new Map(),
-      started: false,
-      seating: null,
-      hands: null,
-      currentTurn: null,
-      tricksWon: { north: 0, east: 0, south: 0, west: 0 },
-      bids: { north: null, east: null, south: null, west: null },
-      spadesBroken: false,
-    };
-    rooms.set(roomId, room);
-    room.players.set(socket.id, { socketId: socket.id, name: socket.data.name, seat: null });
+    rooms.set(roomId, {
+      players: new Map([[socket.id, { socketId: socket.id, name: socket.data.name }]]),
+      gameState: null,
+    });
     socket.join(roomId);
-    socket.emit("room_created", { roomId, room: { players: [{ id: socket.id, name: socket.data.name }] } });
+    io.to(roomId).emit("room_update", {
+      roomId,
+      players: [{ id: socket.id, name: socket.data.name }],
+    });
     broadcastLobby();
   });
 
@@ -113,122 +70,80 @@ io.on("connection", (socket) => {
       socket.emit("error", "Room not found");
       return;
     }
-    if (room.started) {
-      socket.emit("error", "Game already started");
-      return;
-    }
-
-    room.players.set(socket.id, { socketId: socket.id, name: socket.data.name, seat: null });
+    room.players.set(socket.id, { socketId: socket.id, name: socket.data.name });
     socket.join(roomId);
-    const playersList = Array.from(room.players.values()).map(p => ({ id: p.socketId, name: p.name }));
-
-    // notify everyone in room about updated roster
+    const playersList = Array.from(room.players.values()).map((p) => ({
+      id: p.socketId,
+      name: p.name,
+    }));
     io.to(roomId).emit("player_joined", { id: socket.id, name: socket.data.name });
-    io.to(roomId).emit("room_update", { roomId, players: playersList });
+    io.to(roomId).emit("room_update", {
+      roomId,
+      players: playersList,
+    });
     socket.emit("joined_room", { roomId, room: { players: playersList } });
     broadcastLobby();
 
     // auto-start when 4 players
-    if (room.players.size === 4) {
-      const entries = Array.from(room.players.values());
-      const seating = assignSeatsByJoinOrder(entries);
-      room.seating = seating;
-      room.hands = dealHands();
-      room.currentTurn = SEAT_ORDER[Math.floor(Math.random() * 4)];
-      room.started = true;
-      room.tricksWon = { north: 0, east: 0, south: 0, west: 0 };
-      room.bids = { north: null, east: null, south: null, west: null };
-      room.spadesBroken = false;
-
-      for (const seat of SEAT_ORDER) {
-        const seatInfo = seating[seat];
-        if (!seatInfo) continue;
-        const targetSocketId = seatInfo.socketId;
-        const yourSeat = capitalizeSeat(seat);
-        const payload = {
-          yourSeat,
-          seats: {
-            North: { name: seating.north.name },
-            East: { name: seating.east.name },
-            South: { name: seating.south.name },
-            West: { name: seating.west.name },
-          },
-          hand: room.hands[seat],
-          currentTurnSeat: capitalizeSeat(room.currentTurn),
-          tricksWon: {
-            North: room.tricksWon.north,
-            East: room.tricksWon.east,
-            South: room.tricksWon.south,
-            West: room.tricksWon.west,
-          },
-          bids: {
-            North: room.bids.north,
-            East: room.bids.east,
-            South: room.bids.south,
-            West: room.bids.west,
-          },
-          spadesBroken: room.spadesBroken,
-        };
-        io.to(targetSocketId).emit("game_started", payload);
-      }
-
-      const updatedPlayers = Array.from(room.players.values()).map(p => ({ id: p.socketId, name: p.name }));
-      io.to(roomId).emit("room_update", { roomId, players: updatedPlayers });
+    if (room.players.size === 4 && !room.gameState) {
+      const gameState = initializeGame();
+      room.gameState = gameState;
+      // broadcast start_game with full state to all in room
+      io.to(roomId).emit("start_game", {
+        room: {
+          id: roomId,
+          players: playersList,
+        },
+        initialGameState: gameState,
+      });
       broadcastLobby();
     }
   });
 
-  socket.on("play_card", ({ roomId, card }) => {
+  socket.on("place_bid", ({ roomId, playerId, bid }) => {
     const room = rooms.get(roomId);
-    if (!room || !room.started) return;
+    if (!room || !room.gameState) return;
+    room.gameState.bids[playerId] = bid;
+    // broadcast updated game state
+    io.to(roomId).emit("game_state_update", room.gameState);
+  });
 
-    let playerSeat = null;
-    if (room.seating) {
-      for (const seat of SEAT_ORDER) {
-        if (room.seating[seat]?.socketId === socket.id) {
-          playerSeat = seat;
-          break;
-        }
-      }
-    }
-    if (!playerSeat) return;
-
-    const trickUpdate = [{ seat: capitalizeSeat(playerSeat), card }];
-    io.to(roomId).emit("trick_update", {
-      currentTrick: trickUpdate,
-      currentTurnSeat: capitalizeSeat(room.currentTurn),
-      tricksWon: {
-        North: room.tricksWon.north,
-        East: room.tricksWon.east,
-        South: room.tricksWon.south,
-        West: room.tricksWon.west,
-      },
-      bids: {
-        North: room.bids.north,
-        East: room.bids.east,
-        South: room.bids.south,
-        West: room.bids.west,
-      },
-      spadesBroken: room.spadesBroken,
-    });
+  socket.on("play_card", ({ roomId, playerId, card }) => {
+    const room = rooms.get(roomId);
+    if (!room || !room.gameState) return;
+    // apply play
+    playCard(room.gameState, playerId, card);
+    // if trick just completed, evaluate trick (internal to playCard)
+    // optional: if hand finished, compute final scores
+    io.to(roomId).emit("game_state_update", room.gameState);
   });
 
   socket.on("disconnect", () => {
     for (const [roomId, room] of rooms.entries()) {
       if (room.players.has(socket.id)) {
         room.players.delete(socket.id);
-        const remaining = Array.from(room.players.values()).map(p => ({ id: p.socketId, name: p.name }));
-        io.to(roomId).emit("room_update", { roomId, players: remaining });
+        const playersList = Array.from(room.players.values()).map((p) => ({
+          id: p.socketId,
+          name: p.name,
+        }));
+        io.to(roomId).emit("room_update", { roomId, players: playersList });
         if (room.players.size === 0) {
           rooms.delete(roomId);
         } else {
-          room.started = false;
+          room.gameState = null; // optional: pause/reset
         }
         broadcastLobby();
         break;
       }
     }
-    console.log("disconnected:", socket.id);
+  });
+
+  // health
+  socket.on("request_state", ({ roomId }) => {
+    const room = rooms.get(roomId);
+    if (room && room.gameState) {
+      socket.emit("game_state_update", room.gameState);
+    }
   });
 });
 
@@ -237,6 +152,4 @@ app.get("/health", (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log("Server listening on", PORT);
-});
+server.listen(PORT, () => console.log("Server listening on", PORT));
