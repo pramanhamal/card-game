@@ -29,7 +29,8 @@ export const Table: React.FC<TableProps> = ({
     <div className="w-full h-full bg-teal-800 text-white p-6">
       <div className="mb-4">
         <div>
-          <strong>Turn:</strong> {turn === you ? "You" : turn ? nameMap[turn] : "—"}
+          <strong>Turn:</strong>{" "}
+          {turn === you ? "You" : turn ? nameMap[turn] : "—"}
         </div>
         <div className="mt-2 flex gap-4">
           {(["north", "east", "south", "west"] as PlayerId[]).map((p) => (
@@ -37,12 +38,8 @@ export const Table: React.FC<TableProps> = ({
               <div className="font-semibold">
                 {nameMap[p]} ({p})
               </div>
-              <div>
-                Cards: {hands[p].length}
-              </div>
-              <div>
-                Tricks Won: {tricksWon[p]}
-              </div>
+              <div>Cards: {hands[p].length}</div>
+              <div>Tricks Won: {tricksWon[p]}</div>
               <div className="mt-1">
                 Played: {trick[p] ? `${trick[p]?.rank} of ${trick[p]?.suit}` : "—"}
               </div>

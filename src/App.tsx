@@ -6,7 +6,7 @@ import { NameInputPopup } from "./components/NameInputPopup";
 import { Table } from "./components/Table";
 import { GameState, PlayerId, Card } from "./types/spades";
 
-// SERVER URL
+// fixed server URL as requested
 const SERVER_URL = "https://call-break-server.onrender.com";
 
 interface Player {
@@ -156,6 +156,7 @@ const App: React.FC = () => {
   const [canonicalSpadesBroken, setCanonicalSpadesBroken] = useState<boolean>(false);
   const [gameStarted, setGameStarted] = useState(false);
   const [showGameStartPopup, setShowGameStartPopup] = useState(false);
+  const [joinNotifications, setJoinNotifications] = useState<string[]>([]);
 
   useEffect(() => {
     const sock = io(SERVER_URL, {
@@ -177,10 +178,16 @@ const App: React.FC = () => {
       setCurrentRoom({ id: roomId, players: room.players });
     });
 
-    sock.on("room_update", ({ players }: any) => {
-      if (currentRoom) {
-        setCurrentRoom({ id: currentRoom.id, players });
-      }
+    sock.on("room_update", ({ roomId, players }: any) => {
+      setCurrentRoom({ id: roomId, players });
+    });
+
+    sock.on("player_joined", ({ name }: any) => {
+      const msg = `${name} has joined.`;
+      setJoinNotifications((n) => [...n, msg]);
+      setTimeout(() => {
+        setJoinNotifications((n) => n.filter((m) => m !== msg));
+      }, 4000);
     });
 
     sock.on("game_started", (payload: any) => {
@@ -263,6 +270,7 @@ const App: React.FC = () => {
       sock.off("room_created");
       sock.off("joined_room");
       sock.off("room_update");
+      sock.off("player_joined");
       sock.off("game_started");
       sock.off("trick_update");
     };
@@ -355,7 +363,18 @@ const App: React.FC = () => {
 
   if (currentRoom) {
     return (
-      <div className="fixed inset-0 bg-teal-800 flex items-center justify-center text-white text-2xl">
+      <div className="fixed inset-0 bg-teal-800 flex items-center justify-center text-white text-2xl relative">
+        <div className="absolute top-4 left-1/2 transform -translate-x-1/2 space-y-1 z-30">
+          {joinNotifications.map((n, i) => (
+            <div
+              key={i}
+              className="bg-green-500 text-white px-4 py-2 rounded shadow-md"
+            >
+              {n}
+            </div>
+          ))}
+        </div>
+
         <div className="bg-black bg-opacity-50 p-10 rounded-lg text-center shadow-lg">
           <h2 className="text-3xl font-bold mb-4">
             Room: {currentRoom.players[0]?.name}'s Game

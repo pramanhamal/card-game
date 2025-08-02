@@ -32,12 +32,3 @@ export interface GameState {
   bids: Record<PlayerId, number | null>;
   spadesBroken: boolean;
 }
-
-export interface GameResult {
-  handNumber: number;
-  bids: Record<PlayerId, number | null>;
-  tricksWon: Record<PlayerId, number>;
-  scores: Record<PlayerId, number>;
-  totalScores: Record<PlayerId, number>;
-  winner: PlayerId | null;
-}

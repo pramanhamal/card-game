@@ -11,6 +11,7 @@ const SEAT_ORDER = ["north", "east", "south", "west"];
 const RANKS = ["2","3","4","5","6","7","8","9","10","J","Q","K","A"];
 const SUITS = ["clubs","diamonds","hearts","spades"];
 
+// Helpers
 function createDeck() {
   const deck = [];
   for (const suit of SUITS) {
@@ -40,21 +41,21 @@ function dealHands() {
   };
 }
 
+function capitalizeSeat(seat) {
+  return seat[0].toUpperCase() + seat.slice(1);
+}
+
 // In-memory rooms
 const rooms = new Map(); // roomId -> room state
 
 const io = new Server(server, {
   path: "/socket.io",
   cors: {
-    origin: ["https://callbreak-hxwr.onrender.com"], // front-end origin
+    origin: ["https://callbreak-hxwr.onrender.com"], // adjust if frontend origin changes
     methods: ["GET", "POST"],
     credentials: true,
   },
 });
-
-function capitalizeSeat(seat) {
-  return seat[0].toUpperCase() + seat.slice(1);
-}
 
 function broadcastLobby() {
   const simplified = {};
@@ -79,6 +80,7 @@ function assignSeatsByJoinOrder(playerEntries) {
   return seating;
 }
 
+// Socket handlers
 io.on("connection", (socket) => {
   socket.data.name = `Anon-${socket.id.slice(0,4)}`;
   console.log("connected:", socket.id);
@@ -118,15 +120,24 @@ io.on("connection", (socket) => {
       socket.emit("error", "Game already started");
       return;
     }
+
     room.players.set(socket.id, { socketId: socket.id, name: socket.data.name, seat: null });
     socket.join(roomId);
     const playersList = Array.from(room.players.values()).map(p => ({ id: p.socketId, name: p.name }));
-    io.to(roomId).emit("room_update", { players: playersList });
+
+    // Notify existing players of the new joiner
+    io.to(roomId).emit("player_joined", { id: socket.id, name: socket.data.name });
+
+    // Broadcast updated roster to everyone in room
+    io.to(roomId).emit("room_update", { roomId, players: playersList });
+
+    // Confirm to the joining socket
     socket.emit("joined_room", { roomId, room: { players: playersList } });
+
     broadcastLobby();
 
+    // Auto-start when 4 players present
     if (room.players.size === 4) {
-      // start game
       const entries = Array.from(room.players.values());
       const seating = assignSeatsByJoinOrder(entries);
       room.seating = seating;
@@ -141,7 +152,7 @@ io.on("connection", (socket) => {
         const seatInfo = seating[seat];
         if (!seatInfo) continue;
         const targetSocketId = seatInfo.socketId;
-        const yourSeat = capitalizeSeat(seat); // "South" etc.
+        const yourSeat = capitalizeSeat(seat);
         const payload = {
           yourSeat,
           seats: {
@@ -170,7 +181,7 @@ io.on("connection", (socket) => {
       }
 
       const updatedPlayers = Array.from(room.players.values()).map(p => ({ id: p.socketId, name: p.name }));
-      io.to(roomId).emit("room_update", { players: updatedPlayers });
+      io.to(roomId).emit("room_update", { roomId, players: updatedPlayers });
       broadcastLobby();
     }
   });
@@ -178,7 +189,7 @@ io.on("connection", (socket) => {
   socket.on("play_card", ({ roomId, card }) => {
     const room = rooms.get(roomId);
     if (!room || !room.started) return;
-    // simplistic broadcast of played card, real logic would update trick/winner
+
     let playerSeat = null;
     if (room.seating) {
       for (const seat of SEAT_ORDER) {
@@ -215,7 +226,7 @@ io.on("connection", (socket) => {
       if (room.players.has(socket.id)) {
         room.players.delete(socket.id);
         const remaining = Array.from(room.players.values()).map(p => ({ id: p.socketId, name: p.name }));
-        io.to(roomId).emit("room_update", { players: remaining });
+        io.to(roomId).emit("room_update", { roomId, players: remaining });
         if (room.players.size === 0) {
           rooms.delete(roomId);
         } else {
@@ -229,11 +240,12 @@ io.on("connection", (socket) => {
   });
 });
 
+// Health check
 app.get("/health", (req, res) => {
   res.json({ ok: true });
 });
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log("listening on", PORT);
+  console.log("Server listening on", PORT);
 });
