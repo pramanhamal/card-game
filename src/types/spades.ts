@@ -1,4 +1,5 @@
 // src/types/spades.ts
+
 export type PlayerId = "north" | "east" | "south" | "west";
 
 export type Suit = "clubs" | "diamonds" | "hearts" | "spades";
@@ -30,4 +31,13 @@ export interface GameState {
   tricksWon: Record<PlayerId, number>;
   bids: Record<PlayerId, number | null>;
   spadesBroken: boolean;
+}
+
+export interface GameResult {
+  handNumber: number;
+  bids: Record<PlayerId, number | null>;
+  tricksWon: Record<PlayerId, number>;
+  scores: Record<PlayerId, number>;
+  totalScores: Record<PlayerId, number>;
+  winner: PlayerId | null;
 }
