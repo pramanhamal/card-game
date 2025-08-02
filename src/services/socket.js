@@ -1,20 +1,15 @@
-// @ts-check
+// src/services/socket.js
 import { io } from "socket.io-client";
 
-/**
- * @typedef {import("socket.io-client").Socket} Socket
- */
+const SERVER_URL = import.meta.env.VITE_SOCKET_SERVER_URL || "https://callbreak-server.onrender.com";
 
-/** @type {Socket} */
-const socket = io(
-  import.meta.env.VITE_SOCKET_SERVER_URL || "https://callbreak-server.onrender.com",
-  {
-    transports: ["polling", "websocket"],
-    path: "/socket.io",
-    withCredentials: true,
-  }
-);
+const socket = io(SERVER_URL, {
+  transports: ["polling", "websocket"],
+  path: "/socket.io",
+  withCredentials: true, // keep this if server uses credentialed CORS (production); remove temporarily if using DEBUG_CORS
+});
 
+// Logging for visibility
 socket.on("connect", () => {
   console.log("✅ Connected to server, socket id:", socket.id);
 });
@@ -26,6 +21,7 @@ socket.on("disconnect", (reason) => {
 });
 
 /**
+ * Tell the server what display name to use. Should be called before create/join room.
  * @param {string} name
  */
 function setPlayerName(name) {
