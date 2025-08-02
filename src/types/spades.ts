@@ -1,9 +1,7 @@
 // src/types/spades.ts
 
-// canonical identifiers for seats
 export type PlayerId = "north" | "east" | "south" | "west";
 
-// Card suit and rank
 export type Suit = "clubs" | "diamonds" | "hearts" | "spades";
 export type Rank =
   | "2"
@@ -20,13 +18,11 @@ export type Rank =
   | "K"
   | "A";
 
-// A playing card
 export interface Card {
   suit: Suit;
   rank: Rank;
 }
 
-// Core game state
 export interface GameState {
   trick: Record<PlayerId, Card | null>;
   round: number;
@@ -37,12 +33,12 @@ export interface GameState {
   spadesBroken: boolean;
 }
 
-// Result after a full hand (for history/dashboard)
+// Add this so other modules can import it
 export interface GameResult {
   handNumber: number;
   bids: Record<PlayerId, number | null>;
   tricksWon: Record<PlayerId, number>;
-  scores: Record<PlayerId, number>; // per player score for that hand
-  totalScores: Record<PlayerId, number>; // cumulative up to that hand
-  winner: PlayerId | null; // who won the hand (could be based on highest score)
+  scores: Record<PlayerId, number>;
+  totalScores: Record<PlayerId, number>;
+  winner: PlayerId | null;
 }

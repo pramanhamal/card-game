@@ -1,8 +1,6 @@
+// src/components/Table.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import { GameState, PlayerId, Card as CardType } from '../types/spades';
-import { Opponent } from './Opponent';
-import { Card } from './Card';
-import { TrickPile } from './TrickPile';
 import { legalMoves, determineTrickWinner } from '../utils/gameLogic';
 
 export interface TableProps {
@@ -20,13 +18,13 @@ const defaultNameMap: Record<PlayerId, string> = {
   south: 'You',
 };
 
-const rankOrder: Array<number | 'J' | 'Q' | 'K' | 'A'> = [
-  2, 3, 4, 5, 6, 7, 8, 9, 10, 'J', 'Q', 'K', 'A'
+const rankOrder: Array<string> = [
+  "2","3","4","5","6","7","8","9","10","J","Q","K","A"
 ];
 
 function sortByRank(cards: CardType[]) {
   return [...cards].sort(
-    (a, b) => rankOrder.indexOf(a.rank as any) - rankOrder.indexOf(b.rank as any)
+    (a, b) => rankOrder.indexOf(a.rank) - rankOrder.indexOf(b.rank)
   );
 }
 
@@ -76,30 +74,9 @@ export const Table: React.FC<TableProps> = ({
     prevTrickRef.current = trick;
   }, [trick]);
 
-  const yourHand = hands[you];
-  const firstCard = yourHand[0];
-  const firstIsBlack = firstCard
-    ? (firstCard.suit === 'spades' || firstCard.suit === 'clubs')
-    : false;
+  const yourHand = hands[you] || [];
+  const sortedHand = sortByRank(yourHand);
 
-  const suitsInHand = Array.from(new Set(yourHand.map(c => c.suit)));
-  const redSuits = suitsInHand.filter(s => s === 'hearts' || s === 'diamonds').sort();
-  const blackSuits = suitsInHand.filter(s => s === 'spades' || s === 'clubs').sort();
-  const groupLists = firstIsBlack ? [blackSuits, redSuits] : [redSuits, blackSuits];
-  const indices: [number, number] = [0, 0];
-  const suitOrder: string[] = [];
-  let g = 0;
-  while (suitOrder.length < suitsInHand.length) {
-    const list = groupLists[g];
-    const idx = indices[g]++;
-    if (idx < list.length) suitOrder.push(list[idx]);
-    g = 1 - g;
-  }
-  const sortedHand = suitOrder.flatMap(suit =>
-    sortByRank(yourHand.filter(c => c.suit === suit))
-  );
-
-  // Safe turn display
   const turnDisplay = turn
     ? turn === you
       ? "You"
@@ -107,61 +84,58 @@ export const Table: React.FC<TableProps> = ({
     : "—";
 
   return (
-    <div className="relative w-full h-full bg-teal-800">
-      <TrickPile
-        trick={state.trick}
-        winner={lastWinner}
-        onFlyOutEnd={onEvaluateTrick}
-      />
-
-      <div className="absolute top-4 left-4 bg-black bg-opacity-50 text-white px-3 py-1 rounded">
+    <div className="relative w-full h-full bg-teal-800 text-white">
+      <div className="absolute top-4 left-4 bg-black bg-opacity-60 px-3 py-1 rounded">
         Round: {round} | Turn: {turnDisplay}
       </div>
 
-      <Opponent position="north" name={nameMap.north} cardsCount={hands.north.length} tricks={tricksWon.north} />
-      <Opponent position="west" name={nameMap.west} cardsCount={hands.west.length} tricks={tricksWon.west} />
-      <Opponent position="east" name={nameMap.east} cardsCount={hands.east.length} tricks={tricksWon.east} />
+      {/* Simplified opponent display */}
+      <div className="absolute top-16 left-4">
+        <div>North: {nameMap.north}</div>
+      </div>
+      <div className="absolute top-16 right-4">
+        <div>East: {nameMap.east}</div>
+      </div>
+      <div className="absolute top-16 left-1/2 transform -translate-x-1/2">
+        <div>West: {nameMap.west}</div>
+      </div>
 
-      <div
-        className="absolute inset-x-0 bottom-0 h-48 flex justify-center pointer-events-auto transition-all duration-300"
-        style={{
-          filter: isActive
-            ? 'drop-shadow(0 0 20px rgba(255, 255, 100, 0.4))'
-            : 'none',
-        }}
-      >
-        {sortedHand.map((c, i) => {
-          const total = sortedHand.length;
-          const spread = 70;
-          const angle = total > 1
-            ? -spread / 2 + (spread / (total - 1)) * i
-            : 0;
-
-          const key = `${c.suit}-${c.rank}-${i}`;
-          const canPlay = isActive && legalSet.has(`${c.suit}-${c.rank}`);
-          const scale = canPlay ? 1.15 : 1;
-          const translateY = canPlay ? -100 : -80;
-
-          return (
-            <div
-              key={key}
-              className="absolute transition-transform duration-300 ease-in-out"
-              style={{
-                transform: `rotate(${angle}deg) translateY(${translateY}px) scale(${scale})`,
-                transformOrigin: '50% 100%',
-              }}
-            >
-              <div
-                onClick={canPlay ? () => playCard(you, c) : undefined}
-                className={`inline-block rounded-md ${
-                  canPlay ? 'cursor-pointer' : 'pointer-events-none cursor-not-allowed'
-                }`}
-              >
-                <Card card={c} faceUp />
+      {/* Trick display */}
+      <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+        <div className="mb-2">Current Trick</div>
+        <div className="flex gap-4">
+          {(["north", "east", "south", "west"] as PlayerId[]).map((seat) => {
+            const card = trick[seat];
+            return (
+              <div key={seat} className="flex flex-col items-center">
+                <div className="text-sm">{nameMap[seat]}</div>
+                <div className="w-16 h-24 border rounded flex items-center justify-center bg-white text-black">
+                  {card ? `${card.rank}${card.suit[0].toUpperCase()}` : "—"}
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Your hand */}
+      <div className="absolute bottom-4 left-0 right-0 flex justify-center">
+        <div className="flex gap-2">
+          {sortedHand.map((c, idx) => {
+            const key = `${c.suit}-${c.rank}-${idx}`;
+            const canPlay = isActive && legalSet.has(`${c.suit}-${c.rank}`);
+            return (
+              <div
+                key={key}
+                onClick={canPlay ? () => playCard(you, c) : undefined}
+                className={`border rounded px-2 py-1 cursor-pointer ${canPlay ? "ring-2 ring-yellow-400" : "opacity-60"}`}
+              >
+                <div>{c.rank}</div>
+                <div>{c.suit[0].toUpperCase()}</div>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

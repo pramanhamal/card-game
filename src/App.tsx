@@ -2,27 +2,22 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { io, Socket } from "socket.io-client";
 
-// --- Import Your Components ---
 import { Table } from './components/Table';
 import { NameInputPopup } from './components/NameInputPopup';
 import { Lobby } from './components/Lobby';
 import { GameOverPopup } from './components/GameOverPopup';
 
-// --- Import Your Game Types ---
 import { GameState, PlayerId, Card } from './types/spades';
 
-// --- SERVER URL ---
-const SERVER_URL = "https://callbreak-server.onrender.com"; // adjust if needed
+// SERVER URL
+const SERVER_URL = "https://callbreak-server.onrender.com";
 
-// --- Helper Types ---
 interface Player {
   id: string;
   name: string;
 }
 interface RoomFromServer {
   players: Player[];
-  createdAt?: number;
-  started?: boolean;
 }
 interface Room {
   id: string;
@@ -31,25 +26,16 @@ interface Room {
 
 const SEAT_ORDER: PlayerId[] = ["north", "east", "south", "west"];
 
-/** Map a canonical server seat so that viewerSeat appears as "south" in local view */
 function mapSeatForView(serverSeat: PlayerId, viewerSeat: PlayerId): PlayerId {
   const viewerIndex = SEAT_ORDER.indexOf(viewerSeat);
-  const targetIndex = SEAT_ORDER.indexOf("south"); // 2
+  const targetIndex = SEAT_ORDER.indexOf("south");
   const rotation = (targetIndex - viewerIndex + 4) % 4;
   const serverIndex = SEAT_ORDER.indexOf(serverSeat);
   return SEAT_ORDER[(serverIndex + rotation) % 4];
 }
 
-function remapHands(
-  canonical: Record<PlayerId, Card[]>,
-  viewerSeat: PlayerId
-): Record<PlayerId, Card[]> {
-  const local: Record<PlayerId, Card[]> = {
-    north: [],
-    east: [],
-    south: [],
-    west: [],
-  };
+function remapHands(canonical: Record<PlayerId, Card[]>, viewerSeat: PlayerId): Record<PlayerId, Card[]> {
+  const local: Record<PlayerId, Card[]> = { north: [], east: [], south: [], west: [] };
   SEAT_ORDER.forEach((serverSeat) => {
     const localSeat = mapSeatForView(serverSeat, viewerSeat);
     local[localSeat] = canonical[serverSeat];
@@ -57,16 +43,8 @@ function remapHands(
   return local;
 }
 
-function remapTrick(
-  trick: Record<PlayerId, Card | null>,
-  viewerSeat: PlayerId
-): Record<PlayerId, Card | null> {
-  const local: Record<PlayerId, Card | null> = {
-    north: null,
-    east: null,
-    south: null,
-    west: null,
-  };
+function remapTrick(trick: Record<PlayerId, Card | null>, viewerSeat: PlayerId): Record<PlayerId, Card | null> {
+  const local: Record<PlayerId, Card | null> = { north: null, east: null, south: null, west: null };
   SEAT_ORDER.forEach((serverSeat) => {
     const localSeat = mapSeatForView(serverSeat, viewerSeat);
     local[localSeat] = trick[serverSeat];
@@ -74,16 +52,8 @@ function remapTrick(
   return local;
 }
 
-function remapAggregates<T>(
-  aggregate: Record<PlayerId, T>,
-  viewerSeat: PlayerId
-): Record<PlayerId, T> {
-  const local: Record<PlayerId, T> = {
-    north: aggregate.north,
-    east: aggregate.east,
-    south: aggregate.south,
-    west: aggregate.west,
-  } as any;
+function remapAggregates<T>(aggregate: Record<PlayerId, T>, viewerSeat: PlayerId): Record<PlayerId, T> {
+  const local: Record<PlayerId, T> = { north: aggregate.north, east: aggregate.east, south: aggregate.south, west: aggregate.west } as any;
   SEAT_ORDER.forEach((serverSeat) => {
     const localSeat = mapSeatForView(serverSeat, viewerSeat);
     local[localSeat] = aggregate[serverSeat];
@@ -91,12 +61,13 @@ function remapAggregates<T>(
   return local;
 }
 
-function remapTurn(
-  canonicalTurn: PlayerId | null,
-  viewerSeat: PlayerId
-): PlayerId | null {
+function remapTurn(canonicalTurn: PlayerId | null, viewerSeat: PlayerId): PlayerId | null {
   if (!canonicalTurn) return null;
-  return mapSeatForView(canonicalTurn, viewerSeat);
+  const viewerIndex = SEAT_ORDER.indexOf(viewerSeat);
+  const targetIndex = SEAT_ORDER.indexOf("south");
+  const rotation = (targetIndex - viewerIndex + 4) % 4;
+  const serverIndex = SEAT_ORDER.indexOf(canonicalTurn);
+  return SEAT_ORDER[(serverIndex + rotation) % 4];
 }
 
 function seatToPlayerId(seat: string): PlayerId | null {
@@ -114,9 +85,7 @@ function seatToPlayerId(seat: string): PlayerId | null {
   }
 }
 
-// placeholder opponent hand size filler if you need counts
 function makePlaceholderHand(count: number): Card[] {
-  // minimal valid card, content doesn't matter for face-down
   return Array.from({ length: count }, () => ({ suit: "clubs", rank: "2" as any }));
 }
 
@@ -128,7 +97,7 @@ const App: React.FC = () => {
   const [gameStarted, setGameStarted] = useState(false);
   const [showGameStartPopup, setShowGameStartPopup] = useState(false);
 
-  // canonical server state
+  // canonical server-side state
   const [viewerSeat, setViewerSeat] = useState<PlayerId | null>(null);
   const [canonicalHands, setCanonicalHands] = useState<Record<PlayerId, Card[]>>({
     north: makePlaceholderHand(13),
@@ -163,7 +132,6 @@ const App: React.FC = () => {
     west: "West",
   });
 
-  // socket setup
   useEffect(() => {
     const sock = io(SERVER_URL, {
       withCredentials: true,
@@ -194,7 +162,6 @@ const App: React.FC = () => {
       if (!seat) return;
       setViewerSeat(seat);
 
-      // seating names
       const newSeating: Record<PlayerId, string> = {
         north: payload.seats?.North?.name || "North",
         east: payload.seats?.East?.name || "East",
@@ -204,36 +171,25 @@ const App: React.FC = () => {
       newSeating[seat] = "You";
       setSeating(newSeating);
 
-      // hand
       setCanonicalHands((prev) => ({
         ...prev,
         [seat]: payload.hand || [],
       }));
 
-      // turn
-      const turnSeat = seatToPlayerId(payload.currentTurnSeat);
-      setCanonicalTurn(turnSeat);
-
-      // tricks won
+      setCanonicalTurn(seatToPlayerId(payload.currentTurnSeat));
       setCanonicalTricksWon({
         north: payload.tricksWon?.North ?? 0,
         east: payload.tricksWon?.East ?? 0,
         south: payload.tricksWon?.South ?? 0,
         west: payload.tricksWon?.West ?? 0,
       });
-
-      // bids
       setCanonicalBids({
         north: payload.bids?.North ?? null,
         east: payload.bids?.East ?? null,
         south: payload.bids?.South ?? null,
         west: payload.bids?.West ?? null,
       });
-
-      // spades broken
       setCanonicalSpadesBroken(!!payload.spadesBroken);
-
-      // reset trick
       setCanonicalTrick({ north: null, east: null, south: null, west: null });
 
       setGameStarted(true);
@@ -306,7 +262,6 @@ const App: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentRoom]);
 
-  // --- Emitters ---
   const handleNameSubmit = (name: string) => {
     setPlayerName(name);
     socket?.emit("set_player_name", name);
@@ -322,12 +277,11 @@ const App: React.FC = () => {
   };
 
   const handlePlayCard = (player: PlayerId, card: Card) => {
-    if (player !== "south") return; // local viewer always south
+    if (player !== "south") return;
     if (!currentRoom) return;
     socket?.emit("play_card", { roomId: currentRoom.id, card });
   };
 
-  // --- Derived rotated (local) game state so viewerSeat is always south ---
   const localGameState: GameState = useMemo(() => {
     if (!viewerSeat) {
       return {
@@ -360,7 +314,6 @@ const App: React.FC = () => {
     viewerSeat,
   ]);
 
-  // --- Prepare rooms object for Lobby (Record<string, Room>) ---
   const lobbyRoomsForComponent: Record<string, Room> = useMemo(
     () =>
       Object.fromEntries(
@@ -372,7 +325,6 @@ const App: React.FC = () => {
     [rooms]
   );
 
-  // --- UI Flow ---
   if (!playerName) {
     return <NameInputPopup onNameSubmit={handleNameSubmit} />;
   }

@@ -1,39 +1,35 @@
 // src/components/NameInputPopup.tsx
-import React, { useState } from 'react';
+import React, { useState } from "react";
 
 interface NameInputPopupProps {
   onNameSubmit: (name: string) => void;
 }
 
 export const NameInputPopup: React.FC<NameInputPopupProps> = ({ onNameSubmit }) => {
-  const [name, setName] = useState('');
+  const [name, setName] = useState("");
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (name.trim()) {
-      onNameSubmit(name.trim());
-    }
+  const submit = () => {
+    if (name.trim()) onNameSubmit(name.trim());
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-70 z-50 flex items-center justify-center p-4">
-      <form onSubmit={handleSubmit} className="bg-white rounded-lg p-8 w-full max-w-sm text-center shadow-2xl">
-        <h2 className="text-2xl font-bold mb-4">Enter Your Name</h2>
+    <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-60">
+      <div className="bg-white p-6 rounded shadow-md w-full max-w-sm">
+        <h2 className="text-lg font-bold mb-2">Enter Your Name</h2>
         <input
-          type="text"
+          aria-label="Player name"
+          placeholder="Your name"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className="w-full px-4 py-2 border rounded mb-4"
-          placeholder="Player Name"
-          required
+          className="w-full border px-3 py-2 rounded mb-4"
         />
         <button
-          type="submit"
-          className="w-full px-6 py-3 bg-blue-500 text-white rounded-full text-lg font-semibold hover:bg-blue-600 transition"
+          onClick={submit}
+          className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700"
         >
-          Join Lobby
+          Continue
         </button>
-      </form>
+      </div>
     </div>
   );
 };

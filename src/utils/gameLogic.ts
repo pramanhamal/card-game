@@ -4,7 +4,6 @@ import {
   PlayerId,
   Card,
   Rank,
-  GameResult,
 } from "../types/spades";
 
 /** Rank ordering from low to high */
