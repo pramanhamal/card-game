@@ -10,7 +10,7 @@ import { GameOverPopup } from './components/GameOverPopup';
 import { GameState, PlayerId, Card } from './types/spades';
 
 // SERVER URL
-const SERVER_URL = "https://callbreak-server.onrender.com";
+const SERVER_URL = "https://call-break-server.onrender.com";
 
 interface Player {
   id: string;
