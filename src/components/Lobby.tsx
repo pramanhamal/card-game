@@ -1,45 +1,27 @@
 import React, { useState, useEffect } from "react";
-import socket, { setPlayerName } from "../services/socket"; // adjust path if your alias is different
+import socket, { setPlayerName } from "../services/socket"; // adjust path if needed
 
-export type Room = {
+export interface Room {
   players: { id: string; name: string }[];
   createdAt: number;
-};
+}
 
-export const Lobby: React.FC = () => {
+export interface LobbyProps {
+  rooms: Record<string, Room>;
+  onCreateRoom: () => void;
+  onJoinRoom: (roomId: string) => void;
+}
+
+const Lobby: React.FC<LobbyProps> = ({ rooms, onCreateRoom, onJoinRoom }) => {
   const [name, setName] = useState("Player");
   const [roomIdInput, setRoomIdInput] = useState("");
-  const [rooms, setRooms] = useState<Record<string, Room>>({});
-  const [currentRoom, setCurrentRoom] = useState<Room | null>(null);
-  const [status, setStatus] = useState<string>("");
+  const [status, setStatus] = useState("");
 
   useEffect(() => {
-    socket.on("rooms_update", (updatedRooms: Record<string, Room>) => {
-      setRooms(updatedRooms);
-    });
-
-    socket.on("room_update", (room: Room) => {
-      setCurrentRoom(room);
-    });
-
-    socket.on("start_game", (payload: any) => {
-      setStatus("Game is starting!");
-      console.log("start_game:", payload);
-    });
-
-    socket.on("room_full", (rid: string) => {
-      setStatus(`Room ${rid} is full`);
-    });
-
     socket.on("error", (err: any) => {
       setStatus(err?.message || "Server error");
     });
-
     return () => {
-      socket.off("rooms_update");
-      socket.off("room_update");
-      socket.off("start_game");
-      socket.off("room_full");
       socket.off("error");
     };
   }, []);
@@ -50,7 +32,7 @@ export const Lobby: React.FC = () => {
       return;
     }
     setPlayerName(name.trim());
-    socket.emit("create_room");
+    onCreateRoom();
     setStatus("Creating room...");
   };
 
@@ -60,7 +42,7 @@ export const Lobby: React.FC = () => {
       return;
     }
     setPlayerName(name.trim());
-    socket.emit("join_room", roomIdInput.trim());
+    onJoinRoom(roomIdInput.trim());
     setStatus(`Joining room ${roomIdInput.trim()}...`);
   };
 
@@ -110,21 +92,19 @@ export const Lobby: React.FC = () => {
               padding: 8,
               marginBottom: 8,
               borderRadius: 6,
-              background: currentRoom && room === currentRoom ? "#eef" : "#fff",
             }}
           >
             <div>
               <strong>Room ID:</strong> {id}
             </div>
             <div>
-              Players ({room.players.length}/4):{" "}
-              {room.players.map((p) => p.name).join(", ")}
+              Players ({room.players.length}/4): {room.players.map((p) => p.name).join(", ")}
             </div>
             <div>
               <button
                 onClick={() => {
                   setPlayerName(name.trim() || "Player");
-                  socket.emit("join_room", id);
+                  onJoinRoom(id);
                   setStatus(`Joining room ${id}...`);
                 }}
                 disabled={room.players.length >= 4}
@@ -135,22 +115,9 @@ export const Lobby: React.FC = () => {
           </div>
         ))}
       </div>
-
-      {currentRoom && (
-        <div style={{ borderTop: "1px solid #ddd", paddingTop: 12 }}>
-          <h4>Current Room</h4>
-          <div>
-            Players ({currentRoom.players.length}/4):
-            <ul>
-              {currentRoom.players.map((p) => (
-                <li key={p.id}>{p.name}</li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
 
 export default Lobby;
+export { Lobby };
