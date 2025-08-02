@@ -1,7 +1,6 @@
 // src/App.tsx
 import React, { useState, useEffect, useMemo } from "react";
 import { io, Socket } from "socket.io-client";
-
 import { Lobby, Room as LobbyRoom } from "./components/Lobby";
 import { NameInputPopup } from "./components/NameInputPopup";
 import { Table } from "./components/Table";
@@ -24,9 +23,8 @@ interface Room {
   started?: boolean;
 }
 
-// seat order and helpers for remapping so viewer is always south
+// viewer seat remapping helpers so the client sees themselves as south
 const SEAT_ORDER: PlayerId[] = ["north", "east", "south", "west"];
-
 function mapSeatForView(serverSeat: PlayerId, viewerSeat: PlayerId): PlayerId {
   const viewerIndex = SEAT_ORDER.indexOf(viewerSeat);
   const targetIndex = SEAT_ORDER.indexOf("south");
@@ -34,7 +32,6 @@ function mapSeatForView(serverSeat: PlayerId, viewerSeat: PlayerId): PlayerId {
   const serverIndex = SEAT_ORDER.indexOf(serverSeat);
   return SEAT_ORDER[(serverIndex + rotation) % 4];
 }
-
 function remapHands(
   canonical: Record<PlayerId, Card[]>,
   viewerSeat: PlayerId
@@ -51,7 +48,6 @@ function remapHands(
   });
   return local;
 }
-
 function remapTrick(
   trick: Record<PlayerId, Card | null>,
   viewerSeat: PlayerId
@@ -68,7 +64,6 @@ function remapTrick(
   });
   return local;
 }
-
 function remapAggregates<T>(
   aggregate: Record<PlayerId, T>,
   viewerSeat: PlayerId
@@ -85,7 +80,6 @@ function remapAggregates<T>(
   });
   return local;
 }
-
 function remapTurn(
   canonicalTurn: PlayerId | null,
   viewerSeat: PlayerId
@@ -97,7 +91,6 @@ function remapTurn(
   const serverIndex = SEAT_ORDER.indexOf(canonicalTurn);
   return SEAT_ORDER[(serverIndex + rotation) % 4];
 }
-
 function seatToPlayerId(seat: string): PlayerId | null {
   switch (seat.toLowerCase()) {
     case "north":
@@ -165,7 +158,7 @@ const App: React.FC = () => {
   const [showGameStartPopup, setShowGameStartPopup] = useState(false);
   const [joinNotifications, setJoinNotifications] = useState<string[]>([]);
 
-  // initialize socket once
+  // init socket once
   useEffect(() => {
     const sock = io(SERVER_URL, {
       path: "/socket.io",
@@ -173,41 +166,42 @@ const App: React.FC = () => {
       withCredentials: true,
     });
     setSocket(sock);
-
     return () => {
       sock.disconnect();
     };
   }, []);
 
-  // socket listeners (only depends on socket)
+  // socket listeners: only depend on socket
   useEffect(() => {
     if (!socket) return;
 
-    socket.on("rooms_update", (updated: Record<string, RoomFromServer>) => {
+    const handleRoomsUpdate = (updated: Record<string, RoomFromServer>) => {
       setRooms(updated);
-    });
+    };
 
-    socket.on("room_created", ({ roomId, room }: any) => {
+    const handleRoomCreated = ({ roomId, room }: any) => {
       setCurrentRoom({ id: roomId, players: room.players });
-    });
+    };
 
-    socket.on("joined_room", ({ roomId, room }: any) => {
+    const handleJoinedRoom = ({ roomId, room }: any) => {
       setCurrentRoom({ id: roomId, players: room.players });
-    });
+    };
 
-    socket.on("room_update", ({ roomId, players }: any) => {
-      setCurrentRoom({ id: roomId, players });
-    });
+    const handleRoomUpdate = ({ roomId, players }: any) => {
+      setCurrentRoom(prev =>
+        prev && prev.id === roomId ? { ...prev, players } : { id: roomId, players }
+      );
+    };
 
-    socket.on("player_joined", ({ name }: any) => {
+    const handlePlayerJoined = ({ name }: any) => {
       const msg = `${name} has joined.`;
-      setJoinNotifications((n) => [...n, msg]);
+      setJoinNotifications(n => [...n, msg]);
       setTimeout(() => {
-        setJoinNotifications((n) => n.filter((m) => m !== msg));
+        setJoinNotifications(n => n.filter(m => m !== msg));
       }, 4000);
-    });
+    };
 
-    socket.on("game_started", (payload: any) => {
+    const handleGameStarted = (payload: any) => {
       const seat = seatToPlayerId(payload.yourSeat);
       if (!seat) return;
       setViewerSeat(seat);
@@ -222,11 +216,7 @@ const App: React.FC = () => {
         west: payload.seats?.West?.name || "West",
       });
 
-      setCanonicalHands((prev) => ({
-        ...prev,
-        [seat]: payload.hand || [],
-      }));
-
+      setCanonicalHands(prev => ({ ...prev, [seat]: payload.hand || [] }));
       setCanonicalTurn(seatToPlayerId(payload.currentTurnSeat));
       setCanonicalTricksWon({
         north: payload.tricksWon?.North ?? 0,
@@ -242,9 +232,9 @@ const App: React.FC = () => {
       });
       setCanonicalSpadesBroken(!!payload.spadesBroken);
       setCanonicalTrick({ north: null, east: null, south: null, west: null });
-    });
+    };
 
-    socket.on("trick_update", (p: any) => {
+    const handleTrickUpdate = (p: any) => {
       if (p.currentTrick) {
         const newTrick: Record<PlayerId, Card | null> = {
           north: null,
@@ -262,58 +252,61 @@ const App: React.FC = () => {
         setCanonicalTurn(seatToPlayerId(p.currentTurnSeat));
       }
       if (p.tricksWon) {
-        setCanonicalTricksWon({
-          north: p.tricksWon?.North ?? canonicalTricksWon.north,
-          east: p.tricksWon?.East ?? canonicalTricksWon.east,
-          south: p.tricksWon?.South ?? canonicalTricksWon.south,
-          west: p.tricksWon?.West ?? canonicalTricksWon.west,
-        });
+        setCanonicalTricksWon(prev => ({
+          north: p.tricksWon?.North ?? prev.north,
+          east: p.tricksWon?.East ?? prev.east,
+          south: p.tricksWon?.South ?? prev.south,
+          west: p.tricksWon?.West ?? prev.west,
+        }));
       }
       if (p.bids) {
-        setCanonicalBids({
-          north: p.bids?.North ?? canonicalBids.north,
-          east: p.bids?.East ?? canonicalBids.east,
-          south: p.bids?.South ?? canonicalBids.south,
-          west: p.bids?.West ?? canonicalBids.west,
-        });
+        setCanonicalBids(prev => ({
+          north: p.bids?.North ?? prev.north,
+          east: p.bids?.East ?? prev.east,
+          south: p.bids?.South ?? prev.south,
+          west: p.bids?.West ?? prev.west,
+        }));
       }
       if (typeof p.spadesBroken === "boolean") {
         setCanonicalSpadesBroken(p.spadesBroken);
       }
-    });
+    };
+
+    socket.on("rooms_update", handleRoomsUpdate);
+    socket.on("room_created", handleRoomCreated);
+    socket.on("joined_room", handleJoinedRoom);
+    socket.on("room_update", handleRoomUpdate);
+    socket.on("player_joined", handlePlayerJoined);
+    socket.on("game_started", handleGameStarted);
+    socket.on("trick_update", handleTrickUpdate);
 
     return () => {
-      socket.off("rooms_update");
-      socket.off("room_created");
-      socket.off("joined_room");
-      socket.off("room_update");
-      socket.off("player_joined");
-      socket.off("game_started");
-      socket.off("trick_update");
+      socket.off("rooms_update", handleRoomsUpdate);
+      socket.off("room_created", handleRoomCreated);
+      socket.off("joined_room", handleJoinedRoom);
+      socket.off("room_update", handleRoomUpdate);
+      socket.off("player_joined", handlePlayerJoined);
+      socket.off("game_started", handleGameStarted);
+      socket.off("trick_update", handleTrickUpdate);
     };
-  }, [socket, canonicalTricksWon, canonicalBids]);
+  }, [socket]);
 
-  // Emitters
+  // emitters
   const handleNameSubmit = (name: string) => {
     setPlayerName(name);
     socket?.emit("set_player_name", name);
   };
-
-  const handleCreateRoom = () => {
-    socket?.emit("create_room");
-  };
-
+  const handleCreateRoom = () => socket?.emit("create_room");
   const handleJoinRoom = (roomId: string) => {
     socket?.emit("join_room", roomId);
-    setCurrentRoom((prev) => (prev ? { id: roomId, players: prev.players } : null));
+    setCurrentRoom(prev => (prev ? { id: roomId, players: prev.players } : null));
   };
-
   const handlePlayCard = (player: PlayerId, card: Card) => {
     if (!currentRoom) return;
     socket?.emit("play_card", { roomId: currentRoom.id, card });
   };
 
-  // Derived local game state (viewer is always south)
+  // derived local game state (viewer as south)
   const localGameState: GameState = useMemo(() => {
     if (!viewerSeat) return defaultEmptyGameState;
     return {
@@ -335,7 +328,6 @@ const App: React.FC = () => {
     viewerSeat,
   ]);
 
-  // Shape rooms for Lobby component
   const lobbyRoomsForComponent: Record<string, LobbyRoom> = useMemo(
     () =>
       Object.fromEntries(
@@ -347,10 +339,8 @@ const App: React.FC = () => {
     [rooms]
   );
 
-  // UI flow
-  if (!playerName) {
-    return <NameInputPopup onNameSubmit={handleNameSubmit} />;
-  }
+  // UI logic
+  if (!playerName) return <NameInputPopup onNameSubmit={handleNameSubmit} />;
 
   if (showGameStartPopup) {
     return (
@@ -384,7 +374,6 @@ const App: React.FC = () => {
   if (currentRoom) {
     return (
       <div className="fixed inset-0 bg-teal-800 flex items-center justify-center text-white text-2xl relative">
-        {/* join notifications */}
         <div className="absolute top-4 left-1/2 transform -translate-x-1/2 space-y-1 z-30">
           {joinNotifications.map((n, i) => (
             <div
@@ -407,16 +396,6 @@ const App: React.FC = () => {
             {currentRoom.players.map((p) => (
               <p key={p.id}>{p.name} has joined.</p>
             ))}
-          </div>
-          <div className="mt-4">
-            <button
-              onClick={() => {
-                /* placeholder: maybe leave/join logic */
-              }}
-              className="px-4 py-2 bg-gray-700 rounded"
-            >
-              Refresh
-            </button>
           </div>
         </div>
       </div>

@@ -7,11 +7,12 @@ import { customAlphabet } from "nanoid";
 const app = express();
 const server = http.createServer(app);
 
+// seat order
 const SEAT_ORDER = ["north", "east", "south", "west"];
 const RANKS = ["2","3","4","5","6","7","8","9","10","J","Q","K","A"];
 const SUITS = ["clubs","diamonds","hearts","spades"];
 
-// Helpers
+// helpers
 function createDeck() {
   const deck = [];
   for (const suit of SUITS) {
@@ -21,7 +22,6 @@ function createDeck() {
   }
   return deck;
 }
-
 function shuffle(arr) {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
@@ -30,7 +30,6 @@ function shuffle(arr) {
   }
   return a;
 }
-
 function dealHands() {
   const deck = shuffle(createDeck());
   return {
@@ -40,18 +39,17 @@ function dealHands() {
     west: deck.slice(39, 52),
   };
 }
-
 function capitalizeSeat(seat) {
   return seat[0].toUpperCase() + seat.slice(1);
 }
 
-// In-memory rooms
-const rooms = new Map(); // roomId -> room state
+// in-memory rooms
+const rooms = new Map(); // roomId -> room object
 
 const io = new Server(server, {
   path: "/socket.io",
   cors: {
-    origin: ["https://callbreak-hxwr.onrender.com"], // adjust if frontend origin changes
+    origin: ["https://callbreak-hxwr.onrender.com"],
     methods: ["GET", "POST"],
     credentials: true,
   },
@@ -80,7 +78,6 @@ function assignSeatsByJoinOrder(playerEntries) {
   return seating;
 }
 
-// Socket handlers
 io.on("connection", (socket) => {
   socket.data.name = `Anon-${socket.id.slice(0,4)}`;
   console.log("connected:", socket.id);
@@ -125,18 +122,13 @@ io.on("connection", (socket) => {
     socket.join(roomId);
     const playersList = Array.from(room.players.values()).map(p => ({ id: p.socketId, name: p.name }));
 
-    // Notify existing players of the new joiner
+    // notify everyone in room about updated roster
     io.to(roomId).emit("player_joined", { id: socket.id, name: socket.data.name });
-
-    // Broadcast updated roster to everyone in room
     io.to(roomId).emit("room_update", { roomId, players: playersList });
-
-    // Confirm to the joining socket
     socket.emit("joined_room", { roomId, room: { players: playersList } });
-
     broadcastLobby();
 
-    // Auto-start when 4 players present
+    // auto-start when 4 players
     if (room.players.size === 4) {
       const entries = Array.from(room.players.values());
       const seating = assignSeatsByJoinOrder(entries);
@@ -240,7 +232,6 @@ io.on("connection", (socket) => {
   });
 });
 
-// Health check
 app.get("/health", (req, res) => {
   res.json({ ok: true });
 });
