@@ -1,12 +1,34 @@
 import React, { useState, useEffect } from "react";
 import Lobby, { Room } from "./components/Lobby";
 import socket from "./services/socket";
+import GameBoard from "./components/GameBoard";
+
+type Card = {
+  suit: string;
+  rank: string;
+};
+
+interface GameStartedPayload {
+  roomId: string;
+  yourSeat: string;
+  seats: Record<string, { name: string }>;
+  hand: Card[];
+  currentTurnSeat: string;
+  spadesBroken: boolean;
+}
 
 const App: React.FC = () => {
   const [rooms, setRooms] = useState<Record<string, Room>>({});
   const [currentRoom, setCurrentRoom] = useState<Room | null>(null);
-  const [gameStarted, setGameStarted] = useState(false);
-  const [startPayload, setStartPayload] = useState<any>(null);
+  const [gameData, setGameData] = useState<{
+    roomId: string;
+    yourSeat: string;
+    seats: Record<string, { name: string }>;
+    hand: Card[];
+    currentTurnSeat: string;
+    spadesBroken: boolean;
+  } | null>(null);
+  const [startingSeat, setStartingSeat] = useState<string>("");
 
   useEffect(() => {
     socket.on("rooms_update", (updated: Record<string, Room>) => {
@@ -17,18 +39,29 @@ const App: React.FC = () => {
       setCurrentRoom(room);
     });
 
-    socket.on("start_game", (payload) => {
-      console.log("Game starting payload:", payload);
-      setCurrentRoom(payload.room);
-      setGameStarted(true);
-      setStartPayload(payload);
-      // TODO: transition to actual game UI / initialize game state here
+    socket.on("seating", (payload: any) => {
+      // could use to show seating before personal game_started
+      console.log("Seating info:", payload);
+    });
+
+    socket.on("game_started", (payload: GameStartedPayload) => {
+      console.log("Game started payload:", payload);
+      setGameData({
+        roomId: payload.roomId,
+        yourSeat: payload.yourSeat,
+        seats: payload.seats,
+        hand: payload.hand,
+        currentTurnSeat: payload.currentTurnSeat,
+        spadesBroken: payload.spadesBroken,
+      });
+      setStartingSeat(payload.currentTurnSeat);
     });
 
     return () => {
       socket.off("rooms_update");
       socket.off("room_update");
-      socket.off("start_game");
+      socket.off("seating");
+      socket.off("game_started");
     };
   }, []);
 
@@ -40,19 +73,15 @@ const App: React.FC = () => {
     socket.emit("join_room", roomId);
   };
 
-  if (gameStarted && currentRoom) {
+  if (gameData) {
     return (
-      <div style={{ padding: 20 }}>
-        <h2>Game Started!</h2>
-        <div>
-          Room players:{" "}
-          {currentRoom.players.map((p) => (
-            <span key={p.id}>{p.name} </span>
-          ))}
-        </div>
-        <div>{startPayload?.message}</div>
-        {/* Replace with actual game component */}
-      </div>
+      <GameBoard
+        roomId={gameData.roomId}
+        yourSeat={gameData.yourSeat}
+        seats={gameData.seats}
+        initialHand={gameData.hand}
+        startingSeat={startingSeat}
+      />
     );
   }
 

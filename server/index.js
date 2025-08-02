@@ -8,8 +8,6 @@ const crypto = require('crypto');
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || "https://callbreak-hxwr.onrender.com";
 
 const app = express();
-
-// CORS for frontend with credentials support
 app.use(
   cors({
     origin: FRONTEND_ORIGIN,
@@ -28,8 +26,73 @@ const io = new Server(server, {
   path: "/socket.io",
 });
 
+// Utility: build and shuffle deck
+const SUITS = ["clubs", "diamonds", "hearts", "spades"];
+const RANKS = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"];
+
+function createDeck() {
+  const deck = [];
+  for (const suit of SUITS) {
+    for (const rank of RANKS) {
+      deck.push({ suit, rank });
+    }
+  }
+  return deck;
+}
+
+function shuffle(array) {
+  for (let i = array.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [array[i], array[j]] = [array[j], array[i]];
+  }
+}
+
+// Determine trick winner
+const rankValues = {
+  "2": 2,
+  "3": 3,
+  "4": 4,
+  "5": 5,
+  "6": 6,
+  "7": 7,
+  "8": 8,
+  "9": 9,
+  "10": 10,
+  J: 11,
+  Q: 12,
+  K: 13,
+  A: 14,
+};
+
+function determineTrickWinner(trick, seatOrder) {
+  if (trick.length === 0) return null;
+  const leadSuit = trick[0].card.suit;
+  // Check if any spades were played
+  const spadesPlayed = trick.filter((p) => p.card.suit === "spades");
+  let winningPlay;
+  if (spadesPlayed.length > 0) {
+    // Highest spade wins
+    winningPlay = spadesPlayed.reduce((best, curr) => {
+      return rankValues[curr.card.rank] > rankValues[best.card.rank] ? curr : best;
+    });
+  } else {
+    // Highest of lead suit
+    const leadSuitPlays = trick.filter((p) => p.card.suit === leadSuit);
+    winningPlay = leadSuitPlays.reduce((best, curr) => {
+      return rankValues[curr.card.rank] > rankValues[best.card.rank] ? curr : best;
+    });
+  }
+  return winningPlay.seat; // seat string
+}
+
+function nextSeatClockwise(seat) {
+  const order = ["North", "East", "South", "West"];
+  const idx = order.indexOf(seat);
+  return order[(idx + 1) % 4];
+}
+
 // In-memory room store
-// Structure: { [roomId]: { players: [{id,name}], createdAt, started: boolean } }
+// rooms[roomId] = { players: [{id,name}], createdAt, started, game: {...} }
 const rooms = {};
 
 function makeRoomId() {
@@ -47,36 +110,47 @@ function findRoomContainingSocket(socketId) {
 
 io.on("connection", (socket) => {
   console.log("socket connected:", socket.id);
-  // Default fallback name
+  // Default name
   socket.data.playerName = `Player_${socket.id.slice(0, 5)}`;
 
   socket.on("set_player_name", (name) => {
     if (typeof name === "string" && name.trim()) {
       socket.data.playerName = name.trim();
-      // If already in a room, propagate updated name
+      // propagate if in room
       const found = findRoomContainingSocket(socket.id);
       if (found) {
         const { roomId, room } = found;
         const player = room.players.find((p) => p.id === socket.id);
         if (player) player.name = socket.data.playerName;
+        // update any seat name if game started
+        if (room.started && room.game && room.game.seats) {
+          for (const seatName of Object.keys(room.game.seats)) {
+            if (room.game.seats[seatName].id === socket.id) {
+              room.game.seats[seatName].name = socket.data.playerName;
+            }
+          }
+        }
         io.to(roomId).emit("room_update", room);
         io.emit("rooms_update", rooms);
       }
     }
   });
 
+  // Create room
   socket.on("create_room", () => {
     const roomId = makeRoomId();
     rooms[roomId] = {
       players: [{ id: socket.id, name: socket.data.playerName }],
       createdAt: Date.now(),
       started: false,
+      game: null,
     };
     socket.join(roomId);
     io.emit("rooms_update", rooms);
     console.log(`Room created: ${roomId} by ${socket.data.playerName}`);
   });
 
+  // Join room
   socket.on("join_room", (roomId) => {
     const room = rooms[roomId];
     if (!room) {
@@ -85,8 +159,7 @@ io.on("connection", (socket) => {
     }
 
     if (room.players.find((p) => p.id === socket.id)) {
-      // already in the room
-      return;
+      return; // already in
     }
 
     if (room.players.length >= 4) {
@@ -97,40 +170,222 @@ io.on("connection", (socket) => {
     socket.join(roomId);
     room.players.push({ id: socket.id, name: socket.data.playerName });
 
-    // Notify updates
+    // Broadcast room list and update
+    io.emit("rooms_update", rooms);
+    io.to(roomId).emit("room_update", room);
+
+    // If now 4 players, start game
     if (room.players.length === 4 && !room.started) {
       room.started = true;
-      console.log(`Game starting in room ${roomId}`);
-      io.to(roomId).emit("start_game", {
-        message: "All players are in! Game starting now.",
-        room,
-      });
-    } else {
-      io.to(roomId).emit("room_update", room);
-    }
 
-    io.emit("rooms_update", rooms);
+      // Seat assignment (random)
+      const seatNames = ["North", "East", "South", "West"];
+      const shuffledPlayers = [...room.players].sort(() => Math.random() - 0.5);
+
+      // Prepare deck and deal
+      const deck = createDeck();
+      shuffle(deck);
+      const hands = [];
+      for (let i = 0; i < 4; i++) {
+        hands.push(deck.slice(i * 13, i * 13 + 13));
+      }
+
+      // Construct game state
+      const seats = {}; // seatName -> { id, name, hand }
+      for (let i = 0; i < 4; i++) {
+        seats[seatNames[i]] = {
+          id: shuffledPlayers[i].id,
+          name: shuffledPlayers[i].name,
+          hand: hands[i],
+        };
+      }
+
+      const startingSeat = seatNames[Math.floor(Math.random() * 4)];
+
+      room.game = {
+        seats,
+        seatOrder: ["North", "East", "South", "West"],
+        currentTurnSeat: startingSeat,
+        spadesBroken: false,
+        currentTrick: [],
+      };
+
+      console.log(`Game starting in room ${roomId}, starting seat: ${startingSeat}`);
+
+      // Notify all in room of seating (names only)
+      io.to(roomId).emit("seating", {
+        seats: Object.fromEntries(
+          Object.entries(seats).map(([seatName, data]) => [seatName, { name: data.name }])
+        ),
+        startingSeat,
+      });
+
+      // Send personalized game_started to each player with their hand and seat
+      for (const seatName of Object.keys(seats)) {
+        const seatInfo = seats[seatName];
+        const playerSocket = io.sockets.sockets.get(seatInfo.id);
+        if (playerSocket) {
+          playerSocket.emit("game_started", {
+            roomId,
+            yourSeat: seatName,
+            seats: Object.fromEntries(
+              Object.entries(seats).map(([sName, d]) => [sName, { name: d.name }])
+            ), // only names for others
+            hand: seatInfo.hand,
+            currentTurnSeat: room.game.currentTurnSeat,
+            spadesBroken: room.game.spadesBroken,
+          });
+        }
+      }
+    }
   });
 
+  // Play card
+  socket.on("play_card", ({ roomId, card }) => {
+    const room = rooms[roomId];
+    if (!room || !room.started || !room.game) return;
+
+    const game = room.game;
+
+    // Identify seat of this socket
+    let playerSeat = null;
+    for (const [seatName, info] of Object.entries(game.seats)) {
+      if (info.id === socket.id) {
+        playerSeat = seatName;
+        break;
+      }
+    }
+    if (!playerSeat) return;
+
+    // Is it their turn?
+    if (game.currentTurnSeat !== playerSeat) {
+      socket.emit("invalid_move", { message: "Not your turn" });
+      return;
+    }
+
+    // Find their hand
+    const playerObj = game.seats[playerSeat];
+    const hand = playerObj.hand;
+
+    // Check if card exists in their hand
+    const cardIndex = hand.findIndex(
+      (c) => c.suit === card.suit && c.rank === card.rank
+    );
+    if (cardIndex === -1) {
+      socket.emit("invalid_move", { message: "Card not in hand" });
+      return;
+    }
+
+    // Follow suit logic & spades breaking
+    const isLeading = game.currentTrick.length === 0;
+    const leadSuit = isLeading ? null : game.currentTrick[0].card.suit;
+
+    // If leading: can't lead spades unless broken or only spades in hand
+    if (isLeading) {
+      if (card.suit === "spades" && !game.spadesBroken) {
+        // check if hand has any non-spade card
+        const hasNonSpade = hand.some((c) => c.suit !== "spades");
+        if (hasNonSpade) {
+          socket.emit("invalid_move", {
+            message: "Cannot lead spades until broken",
+          });
+          return;
+        }
+      }
+    } else {
+      // Not leading: must follow suit if possible (leadSuit)
+      if (leadSuit && card.suit !== leadSuit) {
+        const hasLeadSuit = hand.some((c) => c.suit === leadSuit);
+        if (hasLeadSuit) {
+          socket.emit("invalid_move", {
+            message: `Must follow suit: ${leadSuit}`,
+          });
+          return;
+        }
+      }
+    }
+
+    // If any spade is played (and spades not broken), mark broken
+    if (card.suit === "spades" && !game.spadesBroken) {
+      game.spadesBroken = true;
+      io.to(roomId).emit("spades_broken", true);
+    }
+
+    // Remove card from player's hand
+    const playedCard = hand.splice(cardIndex, 1)[0];
+
+    // Add to current trick
+    game.currentTrick.push({ seat: playerSeat, card: playedCard });
+
+    // Broadcast trick update
+    // Determine next turn (if trick incomplete)
+    if (game.currentTrick.length < 4) {
+      game.currentTurnSeat = nextSeatClockwise(playerSeat);
+      io.to(roomId).emit("trick_update", {
+        currentTrick: game.currentTrick,
+        currentTurnSeat: game.currentTurnSeat,
+        handsRemaining: Object.fromEntries(
+          Object.entries(game.seats).map(([sName, s]) => [sName, s.hand.length])
+        ),
+      });
+      // update this player's hand privately
+      socket.emit("hand_update", { hand: game.seats[playerSeat].hand });
+    } else {
+      // Trick complete: determine winner
+      const winnerSeat = determineTrickWinner(
+        game.currentTrick,
+        game.seatOrder
+      );
+      game.currentTurnSeat = winnerSeat;
+      const completedTrick = [...game.currentTrick];
+      game.currentTrick = []; // reset for next trick
+
+      io.to(roomId).emit("trick_won", {
+        winnerSeat,
+        trick: completedTrick,
+        currentTurnSeat: game.currentTurnSeat,
+        handsRemaining: Object.fromEntries(
+          Object.entries(game.seats).map(([sName, s]) => [sName, s.hand.length])
+        ),
+      });
+
+      // Notify winner that it's their turn (could send explicit "your_turn")
+      const winnerSocket = io.sockets.sockets.get(game.seats[winnerSeat].id);
+      if (winnerSocket) {
+        winnerSocket.emit("your_turn", { seat: winnerSeat });
+      }
+
+      // Send updated hands to respective players
+      for (const [seatName, info] of Object.entries(game.seats)) {
+        const playerSock = io.sockets.sockets.get(info.id);
+        if (playerSock) {
+          playerSock.emit("hand_update", { hand: info.hand });
+        }
+      }
+    }
+  });
+
+  // Handle disconnect
   socket.on("disconnect", () => {
     console.log("socket disconnected:", socket.id);
-    let changed = false;
+    let updated = false;
     for (const [roomId, room] of Object.entries(rooms)) {
-      const idx = room.players.findIndex((p) => p.id === socket.id);
-      if (idx !== -1) {
-        room.players.splice(idx, 1);
+      const playerIdx = room.players.findIndex((p) => p.id === socket.id);
+      if (playerIdx !== -1) {
+        room.players.splice(playerIdx, 1);
         if (room.players.length === 0) {
           delete rooms[roomId];
           console.log(`Room ${roomId} deleted (empty)`);
         } else {
-          // If game had started and someone left, you could optionally reset started flag here.
           io.to(roomId).emit("room_update", room);
         }
-        changed = true;
+        updated = true;
         break;
       }
     }
-    if (changed) io.emit("rooms_update", rooms);
+    if (updated) {
+      io.emit("rooms_update", rooms);
+    }
   });
 });
 
