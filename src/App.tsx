@@ -5,8 +5,15 @@ import { Scoreboard } from "./components/Scoreboard";
 import { BetPopup } from "./components/BetPopup";
 import { Dashboard } from "./components/Dashboard";
 import { GameOverPopup } from "./components/GameOverPopup";
-import { useMultiplayerGameState, PlayerId } from "./hooks/useMultiplayerGameState";
-import socket, { setPlayerName } from "./services/socket";
+import { useMultiplayerGameState } from "./hooks/useMultiplayerGameState";
+import {
+  remapHands,
+  remapTrick,
+  remapAggregates,
+  remapTurn,
+  remapNames,
+} from "./utils/seatMapping";
+import { PlayerId, Card } from "./types/spades";
 
 const App: React.FC = () => {
   const [playerName, setPlayerNameLocal] = useState("Player");
@@ -14,105 +21,119 @@ const App: React.FC = () => {
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [roomIdInput, setRoomIdInput] = useState("");
 
+  // **Fix**: pass null (or a separate external room id) instead of joinedRoom which is being returned
   const {
     rooms,
     joinedRoom,
     setJoinedRoom,
-    playerId,
+    playerId, // canonical seat assigned by server, lowercase ("north"|"east"|"south"|"west")
+    seating,
     hand,
-    bids,
-    tricksWon,
     currentTurnSeat,
     currentTrick,
+    tricksWon,
+    bids,
     gameStarted,
     createRoom,
     joinRoom,
     placeBid,
-    playCard,
+    playCard, // (card: Card) => void
   } = useMultiplayerGameState(null, playerName);
 
-  // Sync the name to server
-  useEffect(() => {
-    setPlayerName(playerName);
-  }, [playerName]);
+  // Viewer seat fallback to south
+  const viewerSeat: PlayerId = playerId || "south";
 
-  // Show bet popup at start of hand/game
+  // Show bet popup when a game starts
   useEffect(() => {
     if (gameStarted) {
       setBetPopupOpen(true);
     }
   }, [gameStarted]);
 
+  // Build canonical hands: only viewer has a populated hand
+  const canonicalHands: Record<PlayerId, Card[]> = {
+    north: [],
+    east: [],
+    south: [],
+    west: [],
+  };
+  canonicalHands[viewerSeat] = hand;
+
+  // Canonical names (from seating)
+  const canonicalNames: Record<PlayerId, string> = {
+    north: seating.north.name,
+    east: seating.east.name,
+    south: seating.south.name,
+    west: seating.west.name,
+  };
+
+  // Local (rotated) views so viewerSeat becomes "south"
+  const localHands = remapHands(canonicalHands, viewerSeat);
+  const localTrick = remapTrick(
+    currentTrick || { north: null, east: null, south: null, west: null },
+    viewerSeat
+  );
+  const localBids = remapAggregates(bids as any, viewerSeat);
+  const localTricksWon = remapAggregates(tricksWon as any, viewerSeat);
+  const localTurn = remapTurn(currentTurnSeat, viewerSeat);
+  const localNames = remapNames(canonicalNames, viewerSeat);
+
+  // Synthetic state passed into Table/Scoreboard
+  const syntheticState: any = {
+    bids: localBids,
+    tricksWon: localTricksWon,
+    trick: localTrick,
+    turn: localTurn,
+    hands: localHands,
+    round: 0,
+  };
+
   const handleBetSelect = (n: number) => {
     placeBid(n);
     setBetPopupOpen(false);
   };
 
-  // Determine "you" for Table (fallback to south)
-  const you: PlayerId = playerId || "south";
-
-  // Build synthetic state for Table/Scoreboard with safe defaults
-  const syntheticState: any = {
-    bids: {
-      south: bids?.south ?? 0,
-      north: bids?.north ?? 0,
-      east: bids?.east ?? 0,
-      west: bids?.west ?? 0,
-    },
-    tricksWon: {
-      south: tricksWon?.south ?? 0,
-      north: tricksWon?.north ?? 0,
-      east: tricksWon?.east ?? 0,
-      west: tricksWon?.west ?? 0,
-    },
-    trick: currentTrick,
-    turn: currentTurnSeat,
-    hands: {
-      north: [], // you could pass real hands if known / inferred
-      east: [],
-      south: hand,
-      west: [],
-    },
-    round: 0,
+  // Adapter to satisfy Table's expected signature: (player, card)
+  const handleTablePlayCard = (player: PlayerId, card: Card) => {
+    if (player !== "south") return; // only local viewer plays
+    playCard(card);
   };
 
   return (
     <div className="fixed inset-0 bg-teal-800 overflow-hidden">
-      {/* Room creation/join panel */}
-      <div className="absolute top-4 left-4 z-40 p-4 bg-white rounded shadow max-w-md w-full md:w-auto">
+      {/* Lobby / room panel */}
+      <div className="absolute top-4 left-4 z-50 p-4 bg-white rounded shadow max-w-md w-full md:w-auto">
         <div className="flex flex-col gap-2">
-          <div className="flex gap-2 flex-wrap">
-            <div className="flex-1 min-w-[120px]">
-              <label className="block text-xs font-medium">
+          <div className="flex flex-wrap gap-2 items-end">
+            <div>
+              <label className="text-xs block">
                 Name:
                 <input
+                  aria-label="Player name"
                   value={playerName}
                   onChange={(e) => setPlayerNameLocal(e.target.value)}
-                  className="ml-1 border px-2 py-1 w-full rounded"
-                  aria-label="Player name"
+                  className="ml-1 border px-2 py-1 rounded text-sm"
                 />
               </label>
             </div>
-            <div className="flex gap-2 flex-wrap">
+            <div className="flex gap-2">
               <button
-                onClick={() => {
-                  createRoom();
-                }}
+                onClick={() => createRoom()}
                 className="px-3 py-1 bg-blue-500 text-white rounded text-xs"
               >
                 Create Room
               </button>
               <input
+                aria-label="Room ID"
                 placeholder="Room ID"
                 value={roomIdInput}
                 onChange={(e) => setRoomIdInput(e.target.value)}
                 className="border px-2 py-1 rounded text-xs"
-                aria-label="Room ID input"
               />
               <button
                 onClick={() => {
                   joinRoom(roomIdInput);
-                  setJoinedRoom(roomIdInput);
+                  setJoinedRoom(roomIdInput); // optional immediate UI update
                 }}
                 className="px-3 py-1 bg-green-500 text-white rounded text-xs"
               >
@@ -133,9 +154,9 @@ const App: React.FC = () => {
               {Object.entries(rooms || {}).map(([id, room]) => (
                 <div
                   key={id}
-                  className="flex justify-between items-center p-2 border rounded bg-gray-50"
+                  className="flex justify-between items-center p-2 border rounded bg-gray-50 text-xs"
                 >
-                  <div className="flex flex-col text-xs">
+                  <div className="flex flex-col">
                     <div>
                       <span className="font-medium">ID:</span> {id}
                     </div>
@@ -165,26 +186,28 @@ const App: React.FC = () => {
         </div>
       </div>
 
-      {/* Main game UI */}
+      {/* Game table */}
       <Table
         state={syntheticState}
-        playCard={(card: any) => playCard(card)}
-        you={you}
-        onEvaluateTrick={() => {
-          /* server handles trick resolution */
+        playCard={handleTablePlayCard}
+        you="south"
+        onEvaluateTrick={() => {}}
+        nameMap={{
+          north: localNames.north,
+          east: localNames.east,
+          south: localNames.south,
+          west: localNames.west,
         }}
       />
 
       {/* Overlays */}
       {betPopupOpen && <BetPopup onSelect={handleBetSelect} />}
       {dashboardOpen && <Dashboard history={[]} onClose={() => setDashboardOpen(false)} />}
-      {/*
-        Game over detection isn’t included here; plug in your logic and show:
-        <GameOverPopup totalScores={...} onPlayAgain={...} />
-      */}
+      {/* GameOverPopup could be conditionally rendered here */}
+      {/* <GameOverPopup totalScores={{}} onPlayAgain={() => {}} /> */}
 
       {/* Controls */}
-      <div className="absolute top-4 right-4 z-20 flex items-center space-x-2">
+      <div className="absolute top-4 right-4 z-30 flex items-center space-x-2">
         <button
           onClick={() => setDashboardOpen(true)}
           className="p-2 bg-gray-700 text-white rounded-full hover:bg-gray-600"
@@ -194,12 +217,11 @@ const App: React.FC = () => {
         </button>
       </div>
 
-      {/* Scoreboard & bid summary */}
+      {/* Scoreboard & bid */}
       {gameStarted && (
         <>
-          <div className="absolute top-4 left-4 z-20 bg-black bg-opacity-60 text-white px-3 py-1 rounded text-sm">
-            <span className="font-semibold">Your Bid:</span>{" "}
-            {syntheticState.bids.south}
+          <div className="absolute top-16 left-4 z-20 bg-black bg-opacity-60 text-white px-3 py-1 rounded text-sm">
+            <span className="font-semibold">Your Bid:</span> {syntheticState.bids.south}
           </div>
           <div className="absolute bottom-4 right-4 z-20">
             <Scoreboard bids={syntheticState.bids} tricksWon={syntheticState.tricksWon} />
