@@ -1,16 +1,13 @@
 // src/App.tsx
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from "react";
 import { io, Socket } from "socket.io-client";
-
-import { Table } from './components/Table';
-import { NameInputPopup } from './components/NameInputPopup';
-import { Lobby } from './components/Lobby';
-import { GameOverPopup } from './components/GameOverPopup';
-
-import { GameState, PlayerId, Card } from './types/spades';
+import { Lobby, Room } from "./components/Lobby";
+import { NameInputPopup } from "./components/NameInputPopup";
+import { Table } from "./components/Table";
+import { GameState, PlayerId, Card } from "./types/spades";
 
 // SERVER URL
-const SERVER_URL = "https://call-break-server.onrender.com";
+const SERVER_URL = "https://callbreak-server.onrender.com";
 
 interface Player {
   id: string;
@@ -18,10 +15,7 @@ interface Player {
 }
 interface RoomFromServer {
   players: Player[];
-}
-interface Room {
-  id: string;
-  players: Player[];
+  started?: boolean;
 }
 
 const SEAT_ORDER: PlayerId[] = ["north", "east", "south", "west"];
@@ -34,8 +28,16 @@ function mapSeatForView(serverSeat: PlayerId, viewerSeat: PlayerId): PlayerId {
   return SEAT_ORDER[(serverIndex + rotation) % 4];
 }
 
-function remapHands(canonical: Record<PlayerId, Card[]>, viewerSeat: PlayerId): Record<PlayerId, Card[]> {
-  const local: Record<PlayerId, Card[]> = { north: [], east: [], south: [], west: [] };
+function remapHands(
+  canonical: Record<PlayerId, Card[]>,
+  viewerSeat: PlayerId
+): Record<PlayerId, Card[]> {
+  const local: Record<PlayerId, Card[]> = {
+    north: [],
+    east: [],
+    south: [],
+    west: [],
+  };
   SEAT_ORDER.forEach((serverSeat) => {
     const localSeat = mapSeatForView(serverSeat, viewerSeat);
     local[localSeat] = canonical[serverSeat];
@@ -43,8 +45,16 @@ function remapHands(canonical: Record<PlayerId, Card[]>, viewerSeat: PlayerId): 
   return local;
 }
 
-function remapTrick(trick: Record<PlayerId, Card | null>, viewerSeat: PlayerId): Record<PlayerId, Card | null> {
-  const local: Record<PlayerId, Card | null> = { north: null, east: null, south: null, west: null };
+function remapTrick(
+  trick: Record<PlayerId, Card | null>,
+  viewerSeat: PlayerId
+): Record<PlayerId, Card | null> {
+  const local: Record<PlayerId, Card | null> = {
+    north: null,
+    east: null,
+    south: null,
+    west: null,
+  };
   SEAT_ORDER.forEach((serverSeat) => {
     const localSeat = mapSeatForView(serverSeat, viewerSeat);
     local[localSeat] = trick[serverSeat];
@@ -52,8 +62,16 @@ function remapTrick(trick: Record<PlayerId, Card | null>, viewerSeat: PlayerId):
   return local;
 }
 
-function remapAggregates<T>(aggregate: Record<PlayerId, T>, viewerSeat: PlayerId): Record<PlayerId, T> {
-  const local: Record<PlayerId, T> = { north: aggregate.north, east: aggregate.east, south: aggregate.south, west: aggregate.west } as any;
+function remapAggregates<T>(
+  aggregate: Record<PlayerId, T>,
+  viewerSeat: PlayerId
+): Record<PlayerId, T> {
+  const local: Record<PlayerId, T> = {
+    north: aggregate.north,
+    east: aggregate.east,
+    south: aggregate.south,
+    west: aggregate.west,
+  } as any;
   SEAT_ORDER.forEach((serverSeat) => {
     const localSeat = mapSeatForView(serverSeat, viewerSeat);
     local[localSeat] = aggregate[serverSeat];
@@ -61,7 +79,10 @@ function remapAggregates<T>(aggregate: Record<PlayerId, T>, viewerSeat: PlayerId
   return local;
 }
 
-function remapTurn(canonicalTurn: PlayerId | null, viewerSeat: PlayerId): PlayerId | null {
+function remapTurn(
+  canonicalTurn: PlayerId | null,
+  viewerSeat: PlayerId
+): PlayerId | null {
   if (!canonicalTurn) return null;
   const viewerIndex = SEAT_ORDER.indexOf(viewerSeat);
   const targetIndex = SEAT_ORDER.indexOf("south");
@@ -85,25 +106,33 @@ function seatToPlayerId(seat: string): PlayerId | null {
   }
 }
 
-function makePlaceholderHand(count: number): Card[] {
-  return Array.from({ length: count }, () => ({ suit: "clubs", rank: "2" as any }));
-}
+const defaultEmptyGameState: GameState = {
+  trick: { north: null, east: null, south: null, west: null },
+  round: 0,
+  turn: null,
+  hands: { north: [], east: [], south: [], west: [] },
+  tricksWon: { north: 0, east: 0, south: 0, west: 0 },
+  bids: { north: null, east: null, south: null, west: null },
+  spadesBroken: false,
+};
 
 const App: React.FC = () => {
   const [socket, setSocket] = useState<Socket | null>(null);
-  const [playerName, setPlayerName] = useState<string>('');
+  const [playerName, setPlayerName] = useState<string>("");
   const [rooms, setRooms] = useState<Record<string, RoomFromServer>>({});
   const [currentRoom, setCurrentRoom] = useState<Room | null>(null);
-  const [gameStarted, setGameStarted] = useState(false);
-  const [showGameStartPopup, setShowGameStartPopup] = useState(false);
-
-  // canonical server-side state
   const [viewerSeat, setViewerSeat] = useState<PlayerId | null>(null);
+  const [seatingNames, setSeatingNames] = useState<Record<PlayerId, string>>({
+    north: "North",
+    east: "East",
+    south: "You",
+    west: "West",
+  });
   const [canonicalHands, setCanonicalHands] = useState<Record<PlayerId, Card[]>>({
-    north: makePlaceholderHand(13),
-    east: makePlaceholderHand(13),
-    south: makePlaceholderHand(13),
-    west: makePlaceholderHand(13),
+    north: [],
+    east: [],
+    south: [],
+    west: [],
   });
   const [canonicalTrick, setCanonicalTrick] = useState<Record<PlayerId, Card | null>>({
     north: null,
@@ -125,17 +154,14 @@ const App: React.FC = () => {
     west: null,
   });
   const [canonicalSpadesBroken, setCanonicalSpadesBroken] = useState<boolean>(false);
-  const [seating, setSeating] = useState<Record<PlayerId, string>>({
-    north: "North",
-    east: "East",
-    south: "You",
-    west: "West",
-  });
+  const [gameStarted, setGameStarted] = useState(false);
+  const [showGameStartPopup, setShowGameStartPopup] = useState(false);
 
   useEffect(() => {
     const sock = io(SERVER_URL, {
-      withCredentials: true,
+      path: "/socket.io",
       transports: ["websocket", "polling"],
+      withCredentials: true,
     });
     setSocket(sock);
 
@@ -161,15 +187,16 @@ const App: React.FC = () => {
       const seat = seatToPlayerId(payload.yourSeat);
       if (!seat) return;
       setViewerSeat(seat);
+      setGameStarted(true);
+      setShowGameStartPopup(true);
+      setTimeout(() => setShowGameStartPopup(false), 2000);
 
-      const newSeating: Record<PlayerId, string> = {
+      setSeatingNames({
         north: payload.seats?.North?.name || "North",
         east: payload.seats?.East?.name || "East",
         south: payload.seats?.South?.name || "You",
         west: payload.seats?.West?.name || "West",
-      };
-      newSeating[seat] = "You";
-      setSeating(newSeating);
+      });
 
       setCanonicalHands((prev) => ({
         ...prev,
@@ -191,10 +218,6 @@ const App: React.FC = () => {
       });
       setCanonicalSpadesBroken(!!payload.spadesBroken);
       setCanonicalTrick({ north: null, east: null, south: null, west: null });
-
-      setGameStarted(true);
-      setShowGameStartPopup(true);
-      setTimeout(() => setShowGameStartPopup(false), 2000);
     });
 
     sock.on("trick_update", (p: any) => {
@@ -235,21 +258,6 @@ const App: React.FC = () => {
       }
     });
 
-    sock.on("trick_won", (p: any) => {
-      setCanonicalTrick({ north: null, east: null, south: null, west: null });
-      if (p.currentTurnSeat) {
-        setCanonicalTurn(seatToPlayerId(p.currentTurnSeat));
-      }
-      if (p.tricksWon) {
-        setCanonicalTricksWon({
-          north: p.tricksWon?.North ?? canonicalTricksWon.north,
-          east: p.tricksWon?.East ?? canonicalTricksWon.east,
-          south: p.tricksWon?.South ?? canonicalTricksWon.south,
-          west: p.tricksWon?.West ?? canonicalTricksWon.west,
-        });
-      }
-    });
-
     return () => {
       sock.off("rooms_update");
       sock.off("room_created");
@@ -257,7 +265,6 @@ const App: React.FC = () => {
       sock.off("room_update");
       sock.off("game_started");
       sock.off("trick_update");
-      sock.off("trick_won");
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentRoom]);
@@ -273,28 +280,16 @@ const App: React.FC = () => {
 
   const handleJoinRoom = (roomId: string) => {
     socket?.emit("join_room", roomId);
-    setCurrentRoom({ id: roomId, players: currentRoom?.players || [] });
+    setCurrentRoom((prev) => (prev ? { id: roomId, players: prev.players } : null));
   };
 
   const handlePlayCard = (player: PlayerId, card: Card) => {
-    if (player !== "south") return;
     if (!currentRoom) return;
     socket?.emit("play_card", { roomId: currentRoom.id, card });
   };
 
   const localGameState: GameState = useMemo(() => {
-    if (!viewerSeat) {
-      return {
-        trick: { north: null, east: null, south: null, west: null },
-        round: 0,
-        turn: null,
-        hands: { north: [], east: [], south: [], west: [] },
-        tricksWon: { north: 0, east: 0, south: 0, west: 0 },
-        bids: { north: null, east: null, south: null, west: null },
-        spadesBroken: false,
-      };
-    }
-
+    if (!viewerSeat) return defaultEmptyGameState;
     return {
       trick: remapTrick(canonicalTrick, viewerSeat),
       round: 0,
@@ -319,7 +314,7 @@ const App: React.FC = () => {
       Object.fromEntries(
         Object.entries(rooms).map(([id, r]) => [
           id,
-          { id, players: r.players },
+          { id, players: r.players, started: r.started },
         ])
       ),
     [rooms]
@@ -348,10 +343,10 @@ const App: React.FC = () => {
           you="south"
           onEvaluateTrick={() => {}}
           nameMap={{
-            north: seating.north,
-            east: seating.east,
-            south: seating.south,
-            west: seating.west,
+            north: seatingNames.north,
+            east: seatingNames.east,
+            south: seatingNames.south,
+            west: seatingNames.west,
           }}
         />
       </div>
@@ -369,7 +364,7 @@ const App: React.FC = () => {
             Waiting for players... ({currentRoom.players.length}/4)
           </p>
           <div className="space-y-2">
-            {currentRoom.players.map(p => (
+            {currentRoom.players.map((p) => (
               <p key={p.id}>{p.name} has joined.</p>
             ))}
           </div>
