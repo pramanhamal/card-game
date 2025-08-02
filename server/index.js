@@ -4,15 +4,24 @@ const { Server } = require("socket.io");
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
 
-// Serve the client-side file
-app.get('/', (req, res) => {
-  res.sendFile(__dirname + '/index.html');
+// =================== THE CORS FIX IS HERE ===================
+// We configure Socket.IO to allow requests from your frontend's origin.
+const io = new Server(server, {
+  cors: {
+    origin: "https://callbreak-hxwr.onrender.com", // The URL of your frontend application
+    methods: ["GET", "POST"] // Allow these HTTP methods for communication
+  }
 });
+// ==========================================================
 
 const rooms = {};
 const ROOM_CAPACITY = 4;
+
+// A simple route to confirm the server is running
+app.get('/', (req, res) => {
+  res.send('Call Break Server is running!');
+});
 
 io.on('connection', (socket) => {
     console.log(`A user connected: ${socket.id}`);
@@ -27,10 +36,7 @@ io.on('connection', (socket) => {
         }
 
         // Add the new player to the room
-        rooms[roomName].players[socket.id] = {
-            id: socket.id,
-            // You can add more player data here, e.g., username
-        };
+        rooms[roomName].players[socket.id] = { id: socket.id };
 
         const playerCount = Object.keys(rooms[roomName].players).length;
         console.log(`Player ${socket.id} joined ${roomName}. Room now has ${playerCount} players.`);
@@ -41,7 +47,6 @@ io.on('connection', (socket) => {
         // Check if the room is full and start the game
         if (playerCount === ROOM_CAPACITY) {
             console.log(`Room ${roomName} is full. Starting game.`);
-            // Send a message to everyone in the room to start the game
             io.to(roomName).emit('gameStart', { message: `Let the game begin!` });
         }
     });
@@ -59,7 +64,6 @@ io.on('connection', (socket) => {
                 // Notify remaining players of the change
                 io.to(roomName).emit('playerCountUpdate', playerCount);
 
-                // If the room is now empty, you could delete it
                 if (playerCount === 0) {
                     delete rooms[roomName];
                     console.log(`Room ${roomName} is now empty and has been closed.`);
@@ -70,7 +74,8 @@ io.on('connection', (socket) => {
     });
 });
 
-const PORT = 3000;
+// Use the PORT environment variable provided by Render, or 3001 as a fallback
+const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
-    console.log(`🚀 Server is listening on http://localhost:${PORT}`);
+    console.log(`🚀 Server is listening on port ${PORT}`);
 });
