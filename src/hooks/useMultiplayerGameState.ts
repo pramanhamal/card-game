@@ -5,9 +5,17 @@ import socket from "../services/socket";
 export type Card = { suit: string; rank: string };
 export type Seat = "North" | "East" | "South" | "West";
 
-export interface Room {
-  players: { id: string; name: string }[];
-  createdAt: number;
+export interface GameState {
+  seat: Seat | null;
+  seating: Record<Seat, { name: string }>;
+  hand: Card[];
+  currentTurnSeat: Seat | null;
+  spadesBroken: boolean;
+  currentTrick: { seat: Seat; card: Card }[];
+  handsRemaining: Record<Seat, number>;
+  tricksWon: Record<Seat, number>;
+  bids: Record<Seat, number | null>;
+  gameStarted: boolean;
 }
 
 export function useMultiplayerGameState(roomId: string | null, playerName: string) {
@@ -45,37 +53,37 @@ export function useMultiplayerGameState(roomId: string | null, playerName: strin
   useEffect(() => {
     socket.on("game_started", (payload: any) => {
       setSeat(payload.yourSeat);
-      setSeating(payload.seats);
-      setHand(payload.hand);
-      setCurrentTurnSeat(payload.currentTurnSeat);
-      setSpadesBroken(payload.spadesBroken);
-      setTricksWon(payload.tricksWon);
-      setBids(payload.bids);
+      setSeating(payload.seats || { North: { name: "" }, East: { name: "" }, South: { name: "" }, West: { name: "" } });
+      setHand(payload.hand || []);
+      setCurrentTurnSeat(payload.currentTurnSeat || null);
+      setSpadesBroken(!!payload.spadesBroken);
+      setTricksWon(payload.tricksWon || { North: 0, East: 0, South: 0, West: 0 });
+      setBids(payload.bids || { North: null, East: null, South: null, West: null });
       setGameStarted(true);
     });
 
     socket.on("trick_update", (p: any) => {
-      setCurrentTrick(p.currentTrick);
-      setCurrentTurnSeat(p.currentTurnSeat);
-      setHandsRemaining(p.handsRemaining);
+      if (p.currentTrick) setCurrentTrick(p.currentTrick);
+      if (p.currentTurnSeat) setCurrentTurnSeat(p.currentTurnSeat);
+      if (p.handsRemaining) setHandsRemaining(p.handsRemaining);
       if (p.tricksWon) setTricksWon(p.tricksWon);
       if (p.bids) setBids(p.bids);
     });
 
     socket.on("trick_won", (p: any) => {
       setCurrentTrick([]);
-      setCurrentTurnSeat(p.currentTurnSeat);
-      setHandsRemaining(p.handsRemaining);
+      if (p.currentTurnSeat) setCurrentTurnSeat(p.currentTurnSeat);
+      if (p.handsRemaining) setHandsRemaining(p.handsRemaining);
       if (p.tricksWon) setTricksWon(p.tricksWon);
       if (p.bids) setBids(p.bids);
     });
 
     socket.on("hand_update", (p: any) => {
-      setHand(p.hand);
+      if (p.hand) setHand(p.hand);
     });
 
     socket.on("your_turn", (p: any) => {
-      setCurrentTurnSeat(p.seat);
+      if (p.seat) setCurrentTurnSeat(p.seat);
     });
 
     socket.on("spades_broken", (b: boolean) => {
@@ -106,12 +114,9 @@ export function useMultiplayerGameState(roomId: string | null, playerName: strin
     socket.emit("create_room");
   }, []);
 
-  const joinRoom = useCallback(
-    (rid: string) => {
-      socket.emit("join_room", rid);
-    },
-    []
-  );
+  const joinRoom = useCallback((rid: string) => {
+    socket.emit("join_room", rid);
+  }, []);
 
   const placeBid = useCallback(
     (bid: number) => {
