@@ -8,7 +8,7 @@ import {
   playCard,
   evaluateTrick,
   calculateScores,
-} from "../src/utils/gameLogic.js"; // adjust path if compiled
+} from "./utils/gameLogic.js"; // adjust path if compiled
 
 // NOTE: If you compile TS to JS, adjust imports. This assumes ESM.
 
