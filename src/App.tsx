@@ -1,3 +1,4 @@
+// src/App.tsx
 import React, { useState, useEffect, useMemo } from 'react';
 import { io, Socket } from "socket.io-client";
 
@@ -28,12 +29,12 @@ interface Room {
   players: Player[];
 }
 
-// Seat rotation logic so viewerSeat becomes "south"
 const SEAT_ORDER: PlayerId[] = ["north", "east", "south", "west"];
 
+/** Map a canonical server seat so that viewerSeat appears as "south" in local view */
 function mapSeatForView(serverSeat: PlayerId, viewerSeat: PlayerId): PlayerId {
   const viewerIndex = SEAT_ORDER.indexOf(viewerSeat);
-  const targetIndex = SEAT_ORDER.indexOf("south");
+  const targetIndex = SEAT_ORDER.indexOf("south"); // 2
   const rotation = (targetIndex - viewerIndex + 4) % 4;
   const serverIndex = SEAT_ORDER.indexOf(serverSeat);
   return SEAT_ORDER[(serverIndex + rotation) % 4];
@@ -113,14 +114,13 @@ function seatToPlayerId(seat: string): PlayerId | null {
   }
 }
 
-// placeholder opponent hand of N unseen cards
+// placeholder opponent hand size filler if you need counts
 function makePlaceholderHand(count: number): Card[] {
-  const placeholder: Card = { suit: "clubs", rank: 2 as any };
-  return Array.from({ length: count }, () => ({ ...placeholder }));
+  // minimal valid card, content doesn't matter for face-down
+  return Array.from({ length: count }, () => ({ suit: "clubs", rank: "2" as any }));
 }
 
 const App: React.FC = () => {
-  // --- State ---
   const [socket, setSocket] = useState<Socket | null>(null);
   const [playerName, setPlayerName] = useState<string>('');
   const [rooms, setRooms] = useState<Record<string, RoomFromServer>>({});
@@ -128,7 +128,7 @@ const App: React.FC = () => {
   const [gameStarted, setGameStarted] = useState(false);
   const [showGameStartPopup, setShowGameStartPopup] = useState(false);
 
-  // Canonical (server) game state
+  // canonical server state
   const [viewerSeat, setViewerSeat] = useState<PlayerId | null>(null);
   const [canonicalHands, setCanonicalHands] = useState<Record<PlayerId, Card[]>>({
     north: makePlaceholderHand(13),
@@ -155,6 +155,7 @@ const App: React.FC = () => {
     south: null,
     west: null,
   });
+  const [canonicalSpadesBroken, setCanonicalSpadesBroken] = useState<boolean>(false);
   const [seating, setSeating] = useState<Record<PlayerId, string>>({
     north: "North",
     east: "East",
@@ -162,12 +163,11 @@ const App: React.FC = () => {
     west: "West",
   });
 
-  // --- Socket setup ---
+  // socket setup
   useEffect(() => {
     const sock = io(SERVER_URL, {
       withCredentials: true,
       transports: ["websocket", "polling"],
-      path: "/socket.io",
     });
     setSocket(sock);
 
@@ -194,6 +194,7 @@ const App: React.FC = () => {
       if (!seat) return;
       setViewerSeat(seat);
 
+      // seating names
       const newSeating: Record<PlayerId, string> = {
         north: payload.seats?.North?.name || "North",
         east: payload.seats?.East?.name || "East",
@@ -203,13 +204,17 @@ const App: React.FC = () => {
       newSeating[seat] = "You";
       setSeating(newSeating);
 
+      // hand
       setCanonicalHands((prev) => ({
         ...prev,
         [seat]: payload.hand || [],
       }));
 
-      setCanonicalTurn(seatToPlayerId(payload.currentTurnSeat));
+      // turn
+      const turnSeat = seatToPlayerId(payload.currentTurnSeat);
+      setCanonicalTurn(turnSeat);
 
+      // tricks won
       setCanonicalTricksWon({
         north: payload.tricksWon?.North ?? 0,
         east: payload.tricksWon?.East ?? 0,
@@ -217,25 +222,23 @@ const App: React.FC = () => {
         west: payload.tricksWon?.West ?? 0,
       });
 
-      if (payload.bids) {
-        setCanonicalBids({
-          north: payload.bids?.North ?? null,
-          east: payload.bids?.East ?? null,
-          south: payload.bids?.South ?? null,
-          west: payload.bids?.West ?? null,
-        });
-      }
-
-      setCanonicalTrick({
-        north: null,
-        east: null,
-        south: null,
-        west: null,
+      // bids
+      setCanonicalBids({
+        north: payload.bids?.North ?? null,
+        east: payload.bids?.East ?? null,
+        south: payload.bids?.South ?? null,
+        west: payload.bids?.West ?? null,
       });
+
+      // spades broken
+      setCanonicalSpadesBroken(!!payload.spadesBroken);
+
+      // reset trick
+      setCanonicalTrick({ north: null, east: null, south: null, west: null });
 
       setGameStarted(true);
       setShowGameStartPopup(true);
-      setTimeout(() => setShowGameStartPopup(false), 2500);
+      setTimeout(() => setShowGameStartPopup(false), 2000);
     });
 
     sock.on("trick_update", (p: any) => {
@@ -263,6 +266,17 @@ const App: React.FC = () => {
           west: p.tricksWon?.West ?? canonicalTricksWon.west,
         });
       }
+      if (p.bids) {
+        setCanonicalBids({
+          north: p.bids?.North ?? canonicalBids.north,
+          east: p.bids?.East ?? canonicalBids.east,
+          south: p.bids?.South ?? canonicalBids.south,
+          west: p.bids?.West ?? canonicalBids.west,
+        });
+      }
+      if (typeof p.spadesBroken === "boolean") {
+        setCanonicalSpadesBroken(p.spadesBroken);
+      }
     });
 
     sock.on("trick_won", (p: any) => {
@@ -280,15 +294,6 @@ const App: React.FC = () => {
       }
     });
 
-    sock.on("bids_update", (updatedBids: any) => {
-      setCanonicalBids({
-        north: updatedBids?.North ?? null,
-        east: updatedBids?.East ?? null,
-        south: updatedBids?.South ?? null,
-        west: updatedBids?.West ?? null,
-      });
-    });
-
     return () => {
       sock.off("rooms_update");
       sock.off("room_created");
@@ -297,12 +302,11 @@ const App: React.FC = () => {
       sock.off("game_started");
       sock.off("trick_update");
       sock.off("trick_won");
-      sock.off("bids_update");
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentRoom]);
 
-  // --- Event emitters ---
+  // --- Emitters ---
   const handleNameSubmit = (name: string) => {
     setPlayerName(name);
     socket?.emit("set_player_name", name);
@@ -318,47 +322,53 @@ const App: React.FC = () => {
   };
 
   const handlePlayCard = (player: PlayerId, card: Card) => {
-    if (player !== "south") return; // local viewer
+    if (player !== "south") return; // local viewer always south
     if (!currentRoom) return;
     socket?.emit("play_card", { roomId: currentRoom.id, card });
   };
 
-  // --- Derived rotated GameState ---
+  // --- Derived rotated (local) game state so viewerSeat is always south ---
   const localGameState: GameState = useMemo(() => {
     if (!viewerSeat) {
       return {
         trick: { north: null, east: null, south: null, west: null },
         round: 0,
-        turn: "south",
+        turn: null,
         hands: { north: [], east: [], south: [], west: [] },
         tricksWon: { north: 0, east: 0, south: 0, west: 0 },
         bids: { north: null, east: null, south: null, west: null },
-        scores: { north: 0, east: 0, south: 0, west: 0 },
-        deck: [],
-      } as GameState;
+        spadesBroken: false,
+      };
     }
 
     return {
       trick: remapTrick(canonicalTrick, viewerSeat),
       round: 0,
-      turn: (remapTurn(canonicalTurn, viewerSeat) ?? "south") as PlayerId,
+      turn: remapTurn(canonicalTurn, viewerSeat),
       hands: remapHands(canonicalHands, viewerSeat),
       tricksWon: remapAggregates(canonicalTricksWon, viewerSeat),
       bids: remapAggregates(canonicalBids, viewerSeat),
-      scores: { north: 0, east: 0, south: 0, west: 0 },
-      deck: [],
-    } as GameState;
-  }, [canonicalHands, canonicalTrick, canonicalTurn, canonicalTricksWon, canonicalBids, viewerSeat]);
+      spadesBroken: canonicalSpadesBroken,
+    };
+  }, [
+    canonicalHands,
+    canonicalTrick,
+    canonicalTurn,
+    canonicalTricksWon,
+    canonicalBids,
+    canonicalSpadesBroken,
+    viewerSeat,
+  ]);
 
-  // --- Lobby rooms converted to required shape ---
-  const lobbyRooms: Record<string, Room> = useMemo(
+  // --- Prepare rooms object for Lobby (Record<string, Room>) ---
+  const lobbyRoomsForComponent: Record<string, Room> = useMemo(
     () =>
       Object.fromEntries(
         Object.entries(rooms).map(([id, r]) => [
           id,
           { id, players: r.players },
         ])
-      ) as Record<string, Room>,
+      ),
     [rooms]
   );
 
@@ -367,7 +377,7 @@ const App: React.FC = () => {
     return <NameInputPopup onNameSubmit={handleNameSubmit} />;
   }
 
-  if (showGameStartPopup && currentRoom) {
+  if (showGameStartPopup) {
     return (
       <div className="fixed inset-0 bg-teal-800 flex items-center justify-center">
         <div className="bg-white p-8 rounded-lg shadow-xl text-2xl font-bold animate-pulse">
@@ -418,7 +428,7 @@ const App: React.FC = () => {
 
   return (
     <Lobby
-      rooms={lobbyRooms}
+      rooms={lobbyRoomsForComponent}
       onCreateRoom={handleCreateRoom}
       onJoinRoom={handleJoinRoom}
     />

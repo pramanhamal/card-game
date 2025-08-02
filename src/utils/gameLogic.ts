@@ -1,109 +1,177 @@
 // src/utils/gameLogic.ts
 import {
-  Card,
   GameState,
   PlayerId,
+  Card,
+  Rank,
+  GameResult,
 } from "../types/spades";
 
-/**
- * Convert a string Rank ('2'..'10','J','Q','K','A') into a numeric value for comparison.
- */
-function rankValue(rank: Card["rank"]): number {
-  if (rank === "J") return 11;
-  if (rank === "Q") return 12;
-  if (rank === "K") return 13;
-  if (rank === "A") return 14;
-  // '2'..'10'
-  return parseInt(rank, 10);
+/** Rank ordering from low to high */
+export const rankOrder: Rank[] = [
+  "2",
+  "3",
+  "4",
+  "5",
+  "6",
+  "7",
+  "8",
+  "9",
+  "10",
+  "J",
+  "Q",
+  "K",
+  "A",
+];
+
+export function rankValue(r: Rank): number {
+  return rankOrder.indexOf(r);
 }
 
-type Suit = Card["suit"];
+const SEAT_ORDER: PlayerId[] = ["north", "east", "south", "west"];
 
-/**
- * Determine the winner of the current trick under Spades rules.
- */
+/** Determine the trick winner given the current trick (canonical seats) */
 export function determineTrickWinner(
   trick: Record<PlayerId, Card | null>
 ): PlayerId | null {
-  const playedEntries = (Object.entries(trick) as [PlayerId, Card | null][])
-    .filter(([, card]) => card !== null) as [PlayerId, Card][];
+  const played = Object.entries(trick).filter(
+    ([, card]) => card !== null
+  ) as [PlayerId, Card][];
+  if (played.length === 0) return null;
 
-  if (playedEntries.length === 0) return null;
+  const leadSuit = played[0][1].suit;
 
-  // Lead suit is suit of first played card
-  const leadSuit: Suit = playedEntries[0][1].suit;
-
-  // Check for any spades
-  const spadesPlayed = playedEntries.filter(([, card]) => card.suit === "spades");
-
-  let winnerEntry: [PlayerId, Card];
+  // Any spades played?
+  const spadesPlayed = played.filter(([, card]) => card.suit === "spades");
+  let winner: [PlayerId, Card];
 
   if (spadesPlayed.length > 0) {
-    // Highest spade wins
-    winnerEntry = spadesPlayed.reduce((best, curr) => {
-      return rankValue(curr[1].rank) > rankValue(best[1].rank) ? curr : best;
-    });
+    winner = spadesPlayed.reduce((best, curr) =>
+      rankValue(curr[1].rank) > rankValue(best[1].rank) ? curr : best
+    );
   } else {
-    const leadSuitPlays = playedEntries.filter(([, card]) => card.suit === leadSuit);
-    if (leadSuitPlays.length === 0) {
-      winnerEntry = playedEntries[0];
+    const leadSuitPlays = played.filter(([, card]) => card.suit === leadSuit);
+    if (leadSuitPlays.length > 0) {
+      winner = leadSuitPlays.reduce((best, curr) =>
+        rankValue(curr[1].rank) > rankValue(best[1].rank) ? curr : best
+      );
     } else {
-      winnerEntry = leadSuitPlays.reduce((best, curr) => {
-        return rankValue(curr[1].rank) > rankValue(best[1].rank) ? curr : best;
-      });
+      winner = played[0];
     }
   }
 
-  return winnerEntry[0];
+  return winner[0];
 }
 
 /**
- * Returns legal plays for the given player according to Spades rules.
+ * legalMoves enforces:
+ *  - follow suit if possible
+ *  - cannot lead spades until broken unless only spades left
  */
-export function legalMoves(
-  state: Partial<GameState> | undefined & { spadesBroken?: boolean },
-  player: PlayerId
-): Card[] {
-  if (!state) return [];
+export function legalMoves(state: Partial<GameState>, player: PlayerId): Card[] {
+  const hand = state.hands?.[player] ?? [];
+  if (!hand || hand.length === 0) return [];
 
-  const hands: Record<PlayerId, Card[]> = state.hands ?? {
-    north: [],
-    east: [],
-    south: [],
-    west: [],
-  };
-  const trick: Record<PlayerId, Card | null> = state.trick ?? {
+  const trick = state.trick ?? {
     north: null,
     east: null,
     south: null,
     west: null,
   };
-  const spadesBroken: boolean = !!(state as any).spadesBroken;
+  const spadesBroken = state.spadesBroken ?? false;
 
-  const hand = hands[player] ?? [];
+  // If leading
+  const playedThisTrick = Object.values(trick).filter((c) => c !== null);
+  if (playedThisTrick.length === 0) {
+    // Can't lead spades if not broken, unless all cards are spades
+    const hasNonSpade = hand.some((c) => c.suit !== "spades");
+    if (!spadesBroken && hasNonSpade) {
+      return hand.filter((c) => c.suit !== "spades");
+    }
+    return hand;
+  }
 
-  // Determine lead suit if any cards on trick
-  const currentTrickCards = Object.values(trick).filter(
-    (c): c is Card => c !== null
-  );
-  const leadSuit: Suit | null =
-    currentTrickCards.length > 0 ? currentTrickCards[0].suit : null;
-
+  // Not leading: must follow suit if possible
+  const leadSeat = Object.entries(trick).find(([, c]) => c !== null);
+  const leadSuit = leadSeat ? leadSeat[1]!.suit : null;
   if (leadSuit) {
     const hasLead = hand.some((c) => c.suit === leadSuit);
     if (hasLead) {
       return hand.filter((c) => c.suit === leadSuit);
     }
-    return hand; // cannot follow suit
   }
 
-  // Leading: can't lead spades unless broken or only spades in hand
-  const nonSpades = hand.filter((c) => c.suit !== "spades");
-  if (nonSpades.length === 0) {
-    return hand; // only spades
+  // Otherwise any card
+  return hand;
+}
+
+/** Build and shuffle a standard 52-card deck */
+export function createDeck(): Card[] {
+  const suits: Array<"clubs" | "diamonds" | "hearts" | "spades"> = [
+    "clubs",
+    "diamonds",
+    "hearts",
+    "spades",
+  ];
+  const ranks: Rank[] = rankOrder;
+
+  const deck: Card[] = [];
+  for (const suit of suits) {
+    for (const rank of ranks) {
+      deck.push({ suit, rank });
+    }
   }
-  if (!spadesBroken) {
-    return nonSpades; // must lead non-spade
+  return deck;
+}
+
+/** Fisher-Yates shuffle */
+export function shuffle<T>(arr: T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
   }
-  return hand; // spades broken: anything allowed
+  return a;
+}
+
+/** Deal a new hand, return hands per seat and starting turn */
+export function dealNewHand(): {
+  hands: Record<PlayerId, Card[]>;
+  startingSeat: PlayerId;
+} {
+  const deck = shuffle(createDeck());
+  const hands: Record<PlayerId, Card[]> = {
+    north: deck.slice(0, 13),
+    east: deck.slice(13, 26),
+    south: deck.slice(26, 39),
+    west: deck.slice(39, 52),
+  };
+
+  // Random starting seat
+  const idx = Math.floor(Math.random() * 4);
+  const startingSeat: PlayerId = SEAT_ORDER[idx];
+  return { hands, startingSeat };
+}
+
+/** Simple scoring: if tricks >= bid: 10*bid + (tricks - bid), else -10*bid */
+export function computeHandScores(
+  bids: Record<PlayerId, number | null>,
+  tricksWon: Record<PlayerId, number>
+): Record<PlayerId, number> {
+  const scores: Record<PlayerId, number> = {
+    north: 0,
+    east: 0,
+    south: 0,
+    west: 0,
+  };
+  (["north", "east", "south", "west"] as PlayerId[]).forEach((p) => {
+    const bid = bids[p] ?? 0;
+    const tricks = tricksWon[p] ?? 0;
+    if (tricks >= bid) {
+      scores[p] = bid * 10 + (tricks - bid);
+    } else {
+      scores[p] = -bid * 10;
+    }
+  });
+  return scores;
 }

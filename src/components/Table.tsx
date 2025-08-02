@@ -10,7 +10,7 @@ export interface TableProps {
   playCard: (player: PlayerId, card: CardType) => void;
   you: PlayerId;
   onEvaluateTrick: () => void;
-  nameMap?: Record<PlayerId, string>; // added to support dynamic names
+  nameMap?: Record<PlayerId, string>;
 }
 
 const defaultNameMap: Record<PlayerId, string> = {
@@ -20,12 +20,10 @@ const defaultNameMap: Record<PlayerId, string> = {
   south: 'You',
 };
 
-// Global rank ordering
 const rankOrder: Array<number | 'J' | 'Q' | 'K' | 'A'> = [
   2, 3, 4, 5, 6, 7, 8, 9, 10, 'J', 'Q', 'K', 'A'
 ];
 
-// Helper: sort cards by rank ascending
 function sortByRank(cards: CardType[]) {
   return [...cards].sort(
     (a, b) => rankOrder.indexOf(a.rank as any) - rankOrder.indexOf(b.rank as any)
@@ -41,9 +39,6 @@ export const Table: React.FC<TableProps> = ({
 }) => {
   const { trick, round, turn, hands, tricksWon } = state;
 
-  //
-  // 1) Delay your “active turn” UI by 500 ms
-  //
   const trickIsFull = Object.values(trick).every(c => c !== null);
   const isMyTurn = turn === you && !trickIsFull;
   const [isActive, setIsActive] = useState(false);
@@ -64,9 +59,6 @@ export const Table: React.FC<TableProps> = ({
       : []
   );
 
-  //
-  // 2) Track the *real* trick winner as soon as the 4th card lands
-  //
   const [lastWinner, setLastWinner] = useState<PlayerId | null>(null);
   const prevTrickRef = useRef(trick);
 
@@ -84,9 +76,6 @@ export const Table: React.FC<TableProps> = ({
     prevTrickRef.current = trick;
   }, [trick]);
 
-  //
-  // 3) Build your sorted, fanned hand directly on each render
-  //
   const yourHand = hands[you];
   const firstCard = yourHand[0];
   const firstIsBlack = firstCard
@@ -110,6 +99,13 @@ export const Table: React.FC<TableProps> = ({
     sortByRank(yourHand.filter(c => c.suit === suit))
   );
 
+  // Safe turn display
+  const turnDisplay = turn
+    ? turn === you
+      ? "You"
+      : nameMap[turn]
+    : "—";
+
   return (
     <div className="relative w-full h-full bg-teal-800">
       <TrickPile
@@ -119,7 +115,7 @@ export const Table: React.FC<TableProps> = ({
       />
 
       <div className="absolute top-4 left-4 bg-black bg-opacity-50 text-white px-3 py-1 rounded">
-        Round: {round} | Turn: {turn === you ? 'You' : nameMap[turn]}
+        Round: {round} | Turn: {turnDisplay}
       </div>
 
       <Opponent position="north" name={nameMap.north} cardsCount={hands.north.length} tricks={tricksWon.north} />
@@ -141,14 +137,14 @@ export const Table: React.FC<TableProps> = ({
             ? -spread / 2 + (spread / (total - 1)) * i
             : 0;
 
-          const key = `${c.suit}-${c.rank}`;
-          const canPlay = isActive && legalSet.has(key);
+          const key = `${c.suit}-${c.rank}-${i}`;
+          const canPlay = isActive && legalSet.has(`${c.suit}-${c.rank}`);
           const scale = canPlay ? 1.15 : 1;
           const translateY = canPlay ? -100 : -80;
 
           return (
             <div
-              key={key + "-" + i}
+              key={key}
               className="absolute transition-transform duration-300 ease-in-out"
               style={{
                 transform: `rotate(${angle}deg) translateY(${translateY}px) scale(${scale})`,
