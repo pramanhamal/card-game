@@ -98,6 +98,92 @@ function findRoomContainingSocket(socketId) {
   return null;
 }
 
+function tryStartGame(roomId) {
+  const room = rooms[roomId];
+  if (!room) return;
+  console.log(`[GameStartCheck] Room ${roomId} has ${room.players.length} players; started=${room.started}`);
+
+  if (room.players.length >= 4 && !room.started) {
+    room.started = true;
+
+    const seatNames = ["North", "East", "South", "West"];
+    const shuffledPlayers = [...room.players].sort(() => Math.random() - 0.5);
+
+    // Deal deck
+    const deck = createDeck();
+    shuffle(deck);
+    const hands = [];
+    for (let i = 0; i < 4; i++) {
+      hands.push(deck.slice(i * 13, i * 13 + 13));
+    }
+
+    const seats = {};
+    for (let i = 0; i < 4; i++) {
+      seats[seatNames[i]] = {
+        id: shuffledPlayers[i].id,
+        name: shuffledPlayers[i].name,
+        hand: hands[i],
+      };
+    }
+
+    const startingSeat = seatNames[Math.floor(Math.random() * 4)];
+    room.game = {
+      seats,
+      seatOrder: ["North", "East", "South", "West"],
+      currentTurnSeat: startingSeat,
+      spadesBroken: false,
+      currentTrick: [],
+      bids: { North: null, East: null, South: null, West: null },
+      tricksWon: { North: 0, East: 0, South: 0, West: 0 },
+    };
+
+    console.log(`[GameStarted] Room ${roomId} starting seat: ${startingSeat}`);
+    console.log(`[GameStarted] Seat assignments:`, Object.fromEntries(
+      Object.entries(seats).map(([sn, d]) => [sn, { id: d.id, name: d.name }])
+    ));
+
+    // Broadcast seating (names only)
+    io.to(roomId).emit("seating", {
+      seats: Object.fromEntries(
+        Object.entries(seats).map(([seatName, data]) => [seatName, { name: data.name }])
+      ),
+      startingSeat,
+    });
+
+    // Send personalized game_started to each player
+    for (const seatName of Object.keys(seats)) {
+      const seatInfo = seats[seatName];
+      const playerSocket = io.sockets.sockets.get(seatInfo.id);
+      if (playerSocket) {
+        playerSocket.emit("game_started", {
+          roomId,
+          yourSeat: seatName,
+          seats: Object.fromEntries(
+            Object.entries(seats).map(([sName, d]) => [sName, { name: d.name }])
+          ),
+          hand: seatInfo.hand,
+          currentTurnSeat: room.game.currentTurnSeat,
+          spadesBroken: room.game.spadesBroken,
+          bids: room.game.bids,
+          tricksWon: room.game.tricksWon,
+        });
+        console.log(`[Emit] game_started sent to ${seatInfo.name} (${seatInfo.id}) as ${seatName}`);
+      } else {
+        console.warn(`[Warning] Socket for seat ${seatName} (${seatInfo.id}) not found during game start`);
+      }
+    }
+  } else {
+    io.to(roomId).emit("start_attempt_status", {
+      roomId,
+      playerCount: room.players.length,
+      started: room.started,
+      message: room.started
+        ? "Game already started"
+        : `Waiting for players: need 4, have ${room.players.length}`,
+    });
+  }
+}
+
 io.on("connection", (socket) => {
   console.log("socket connected:", socket.id);
   socket.data.playerName = `Player_${socket.id.slice(0, 5)}`;
@@ -110,7 +196,6 @@ io.on("connection", (socket) => {
         const { roomId, room } = found;
         const player = room.players.find((p) => p.id === socket.id);
         if (player) player.name = socket.data.playerName;
-        // If game started, update seat name too
         if (room.started && room.game && room.game.seats) {
           for (const seatName of Object.keys(room.game.seats)) {
             if (room.game.seats[seatName].id === socket.id) {
@@ -136,6 +221,7 @@ io.on("connection", (socket) => {
     socket.emit("room_created", { roomId, room: rooms[roomId] });
     io.emit("rooms_update", rooms);
     console.log(`Room created: ${roomId} by ${socket.data.playerName}`);
+    // No immediate start; wait until 4 players
   });
 
   socket.on("join_room", (roomId) => {
@@ -147,6 +233,8 @@ io.on("connection", (socket) => {
 
     if (room.players.find((p) => p.id === socket.id)) {
       socket.emit("joined_room", { roomId, room });
+      // still attempt start in case conditions changed
+      tryStartGame(roomId);
       return;
     }
 
@@ -162,72 +250,8 @@ io.on("connection", (socket) => {
     io.emit("rooms_update", rooms);
     io.to(roomId).emit("room_update", room);
 
-    // Start game when 4 players present
-    if (room.players.length === 4 && !room.started) {
-      room.started = true;
-
-      // Random seat assignment
-      const seatNames = ["North", "East", "South", "West"];
-      const shuffledPlayers = [...room.players].sort(() => Math.random() - 0.5);
-
-      // Deal deck
-      const deck = createDeck();
-      shuffle(deck);
-      const hands = [];
-      for (let i = 0; i < 4; i++) {
-        hands.push(deck.slice(i * 13, i * 13 + 13));
-      }
-
-      const seats = {};
-      for (let i = 0; i < 4; i++) {
-        seats[seatNames[i]] = {
-          id: shuffledPlayers[i].id,
-          name: shuffledPlayers[i].name,
-          hand: hands[i],
-        };
-      }
-
-      const startingSeat = seatNames[Math.floor(Math.random() * 4)];
-      room.game = {
-        seats,
-        seatOrder: ["North", "East", "South", "West"],
-        currentTurnSeat: startingSeat,
-        spadesBroken: false,
-        currentTrick: [],
-        bids: { North: null, East: null, South: null, West: null },
-        tricksWon: { North: 0, East: 0, South: 0, West: 0 },
-      };
-
-      console.log(`Game starting in room ${roomId}, starting seat: ${startingSeat}`);
-
-      // Broadcast seating to everyone (names only)
-      io.to(roomId).emit("seating", {
-        seats: Object.fromEntries(
-          Object.entries(seats).map(([seatName, data]) => [seatName, { name: data.name }])
-        ),
-        startingSeat,
-      });
-
-      // Send personalized game_started to each player
-      for (const seatName of Object.keys(seats)) {
-        const seatInfo = seats[seatName];
-        const playerSocket = io.sockets.sockets.get(seatInfo.id);
-        if (playerSocket) {
-          playerSocket.emit("game_started", {
-            roomId,
-            yourSeat: seatName,
-            seats: Object.fromEntries(
-              Object.entries(seats).map(([sName, d]) => [sName, { name: d.name }])
-            ),
-            hand: seatInfo.hand,
-            currentTurnSeat: room.game.currentTurnSeat,
-            spadesBroken: room.game.spadesBroken,
-            bids: room.game.bids,
-            tricksWon: room.game.tricksWon,
-          });
-        }
-      }
-    }
+    // centralized game start attempt
+    tryStartGame(roomId);
   });
 
   socket.on("place_bid", ({ roomId, seat, bid }) => {
