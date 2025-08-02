@@ -1,15 +1,15 @@
 // src/services/socket.js
 import { io } from "socket.io-client";
 
-const SERVER_URL = import.meta.env.VITE_SOCKET_SERVER_URL || "https://call-break-server.onrender.com";
+const SERVER_URL =
+  import.meta.env.VITE_SOCKET_SERVER_URL || "https://call-break-server.onrender.com"; // make sure this matches your deployed backend
 
 const socket = io(SERVER_URL, {
   transports: ["polling", "websocket"],
   path: "/socket.io",
-  withCredentials: true, // keep this if server uses credentialed CORS (production); remove temporarily if using DEBUG_CORS
+  withCredentials: true, // works because server allows credentials for the exact origin
 });
 
-// Logging for visibility
 socket.on("connect", () => {
   console.log("✅ Connected to server, socket id:", socket.id);
 });
@@ -21,7 +21,7 @@ socket.on("disconnect", (reason) => {
 });
 
 /**
- * Tell the server what display name to use. Should be called before create/join room.
+ * Tell server what name to use. Call before create/join.
  * @param {string} name
  */
 function setPlayerName(name) {

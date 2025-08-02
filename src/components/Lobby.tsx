@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import socket, { setPlayerName } from "../services/socket"; // adjust path if needed
+import socket, { setPlayerName } from "../services/socket";
 
 export interface Room {
   players: { id: string; name: string }[];
@@ -18,11 +18,16 @@ const Lobby: React.FC<LobbyProps> = ({ rooms, onCreateRoom, onJoinRoom }) => {
   const [status, setStatus] = useState("");
 
   useEffect(() => {
-    socket.on("error", (err: any) => {
+    const onError = (err: any) => {
       setStatus(err?.message || "Server error");
+    };
+    socket.on("error", onError);
+    socket.on("room_full", (rid: string) => {
+      setStatus(`Room ${rid} is full`);
     });
     return () => {
-      socket.off("error");
+      socket.off("error", onError);
+      socket.off("room_full");
     };
   }, []);
 
@@ -47,7 +52,7 @@ const Lobby: React.FC<LobbyProps> = ({ rooms, onCreateRoom, onJoinRoom }) => {
   };
 
   return (
-    <div style={{ padding: 16, maxWidth: 600, margin: "0 auto" }}>
+    <div style={{ padding: 16, maxWidth: 700, margin: "0 auto" }}>
       <h2>Lobby</h2>
 
       <div style={{ marginBottom: 12 }}>
@@ -57,41 +62,44 @@ const Lobby: React.FC<LobbyProps> = ({ rooms, onCreateRoom, onJoinRoom }) => {
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Display name"
-            style={{ padding: 4 }}
+            style={{ padding: 6 }}
           />
         </label>
       </div>
 
-      <div style={{ marginBottom: 12 }}>
-        <button onClick={handleCreate} style={{ marginRight: 8, padding: "6px 12px" }}>
+      <div style={{ marginBottom: 12, display: "flex", gap: 8 }}>
+        <button onClick={handleCreate} style={{ padding: "6px 14px" }}>
           Create Room
         </button>
-        <input
-          placeholder="Room ID"
-          value={roomIdInput}
-          onChange={(e) => setRoomIdInput(e.target.value)}
-          style={{ padding: 4, marginRight: 8 }}
-        />
-        <button onClick={handleJoin} style={{ padding: "6px 12px" }}>
-          Join Room
-        </button>
+        <div>
+          <input
+            placeholder="Room ID"
+            value={roomIdInput}
+            onChange={(e) => setRoomIdInput(e.target.value)}
+            style={{ padding: 6 }}
+          />
+          <button onClick={handleJoin} style={{ marginLeft: 6, padding: "6px 14px" }}>
+            Join Room
+          </button>
+        </div>
       </div>
 
       <div style={{ marginBottom: 12 }}>
         <strong>Status:</strong> {status}
       </div>
 
-      <div style={{ marginBottom: 16 }}>
+      <div>
         <h4>Available Rooms</h4>
         {Object.keys(rooms).length === 0 && <div>No rooms yet</div>}
         {Object.entries(rooms).map(([id, room]) => (
           <div
             key={id}
             style={{
-              border: "1px solid #ccc",
-              padding: 8,
-              marginBottom: 8,
+              border: "1px solid #ddd",
+              padding: 10,
               borderRadius: 6,
+              marginBottom: 8,
+              background: "#fafafa",
             }}
           >
             <div>
@@ -100,7 +108,7 @@ const Lobby: React.FC<LobbyProps> = ({ rooms, onCreateRoom, onJoinRoom }) => {
             <div>
               Players ({room.players.length}/4): {room.players.map((p) => p.name).join(", ")}
             </div>
-            <div>
+            <div style={{ marginTop: 6 }}>
               <button
                 onClick={() => {
                   setPlayerName(name.trim() || "Player");
@@ -108,6 +116,7 @@ const Lobby: React.FC<LobbyProps> = ({ rooms, onCreateRoom, onJoinRoom }) => {
                   setStatus(`Joining room ${id}...`);
                 }}
                 disabled={room.players.length >= 4}
+                style={{ padding: "4px 10px" }}
               >
                 {room.players.length >= 4 ? "Full" : "Join"}
               </button>
