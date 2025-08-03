@@ -1,3 +1,4 @@
+// src/components/Table.tsx
 import React, { useState, useEffect, useRef } from "react";
 import type { GameState, PlayerId, Card as CardType } from "../types/spades";
 import { Opponent } from "./Opponent";
@@ -20,6 +21,7 @@ const defaultNameMap: Record<PlayerId, string> = {
   south: "You",
 };
 
+// global rank ordering used for sorting
 const rankOrder: Array<number | "J" | "Q" | "K" | "A"> = [
   2, 3, 4, 5, 6, 7, 8, 9, 10, "J", "Q", "K", "A",
 ];
@@ -30,6 +32,8 @@ function sortByRank(cards: CardType[]) {
   );
 }
 
+const SEAT_CLOCKWISE: PlayerId[] = ["north", "east", "south", "west"];
+
 export const Table: React.FC<TableProps> = ({
   state,
   playCard,
@@ -39,10 +43,37 @@ export const Table: React.FC<TableProps> = ({
 }) => {
   const { trick, round, turn, hands, tricksWon } = state;
 
+  // ------------- perspective rotation -------------
+  // Build clockwise sequence starting from "you"
+  const youIdx = SEAT_CLOCKWISE.indexOf(you);
+  const clockwiseFromYou = [
+    ...SEAT_CLOCKWISE.slice(youIdx),
+    ...SEAT_CLOCKWISE.slice(0, youIdx),
+  ]; // e.g., [you, next clockwise, ..., ...]
+
+  // Map display positions so that:
+  // south (bottom) = you
+  // west (left) = next clockwise after you
+  // north (top) = next after that
+  // east (right) = last
+  const uiMapping: {
+    south: PlayerId;
+    west: PlayerId;
+    north: PlayerId;
+    east: PlayerId;
+  } = {
+    south: clockwiseFromYou[0],
+    west: clockwiseFromYou[1],
+    north: clockwiseFromYou[2],
+    east: clockwiseFromYou[3],
+  };
+
+  // Determine if it's this client's active turn
   const trickIsFull = Object.values(trick).every((c) => c !== null);
   const isMyTurn = turn === you && !trickIsFull;
-  const [isActive, setIsActive] = useState(false);
 
+  // Active UI delay
+  const [isActive, setIsActive] = useState(false);
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout>;
     if (isMyTurn) {
@@ -53,15 +84,16 @@ export const Table: React.FC<TableProps> = ({
     return () => clearTimeout(timer);
   }, [isMyTurn]);
 
+  // Legal move set for you
   const legalSet = new Set(
     isActive
       ? legalMoves(state, you).map((c) => `${c.suit}-${c.rank}`)
       : []
   );
 
+  // Track last trick winner
   const [lastWinner, setLastWinner] = useState<PlayerId | null>(null);
   const prevTrickRef = useRef(trick);
-
   useEffect(() => {
     const prevCount = Object.values(prevTrickRef.current).filter(
       (c) => c !== null
@@ -78,6 +110,7 @@ export const Table: React.FC<TableProps> = ({
     prevTrickRef.current = trick;
   }, [trick]);
 
+  // Build your sorted hand with alternating color grouping like before
   const yourHand = hands[you];
   const firstCard = yourHand[0];
   const firstIsBlack = firstCard
@@ -107,31 +140,37 @@ export const Table: React.FC<TableProps> = ({
 
   return (
     <div className="relative w-full h-full bg-teal-800">
-      <TrickPile trick={state.trick} winner={lastWinner} onFlyOutEnd={onEvaluateTrick} />
+      <TrickPile
+        trick={state.trick}
+        winner={lastWinner}
+        onFlyOutEnd={onEvaluateTrick}
+      />
 
       <div className="absolute top-4 left-4 bg-black bg-opacity-50 text-white px-3 py-1 rounded">
         Round: {round} | Turn: {turn === you ? "You" : nameMap[turn]}
       </div>
 
+      {/* Opponents placed according to rotated perspective */}
       <Opponent
         position="north"
-        name={nameMap.north}
-        cardsCount={hands.north.length}
-        tricks={tricksWon.north}
+        name={nameMap[uiMapping.north]}
+        cardsCount={hands[uiMapping.north].length}
+        tricks={tricksWon[uiMapping.north]}
       />
       <Opponent
         position="west"
-        name={nameMap.west}
-        cardsCount={hands.west.length}
-        tricks={tricksWon.west}
+        name={nameMap[uiMapping.west]}
+        cardsCount={hands[uiMapping.west].length}
+        tricks={tricksWon[uiMapping.west]}
       />
       <Opponent
         position="east"
-        name={nameMap.east}
-        cardsCount={hands.east.length}
-        tricks={tricksWon.east}
+        name={nameMap[uiMapping.east]}
+        cardsCount={hands[uiMapping.east].length}
+        tricks={tricksWon[uiMapping.east]}
       />
 
+      {/* Your hand at bottom */}
       <div
         className="absolute inset-x-0 bottom-0 h-48 flex justify-center pointer-events-auto transition-all duration-300"
         style={{
