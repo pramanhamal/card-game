@@ -1,42 +1,118 @@
-import React from "react";
-import type { PlayerId, Card } from "../types/spades";
+// src/components/TrickPile.tsx
+import React, { useEffect, useState, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import type { PlayerId, Card as CardType } from "../types/spades";
+import { Card } from "./Card";
 
 interface TrickPileProps {
-  trick: Record<PlayerId, Card | null>;
+  trick: Record<PlayerId, CardType | null>;
   winner: PlayerId | null;
-  onFlyOutEnd: () => void;
+  onFlyOutEnd?: () => void;
 }
+
+type Position = { x: number; y: number; rotate: number };
+
+// Base off-screen / starting offsets for each seat
+const seatOffsets: Record<PlayerId, Position> = {
+  north: { x: 0, y: -200, rotate: 0 },
+  east: { x: 300, y: 0, rotate: 0 },
+  west: { x: -300, y: 0, rotate: 0 },
+  south: { x: 0, y: 200, rotate: 0 },
+};
+
+// Center positions where cards gather before flying out
+const centerSlots: Record<PlayerId, Position> = {
+  north: { x: 0, y: -50, rotate: -5 },
+  east: { x: 50, y: 0, rotate: 10 },
+  west: { x: -50, y: 0, rotate: -8 },
+  south: { x: 0, y: 50, rotate: 3 },
+};
+
+// Order in which plays are considered for stacking
+const playOrder: PlayerId[] = ["north", "east", "west", "south"];
 
 export const TrickPile: React.FC<TrickPileProps> = ({
   trick,
   winner,
   onFlyOutEnd,
 }) => {
+  const [cards, setCards] = useState<Array<{ player: PlayerId; card: CardType }>>(
+    []
+  );
+  const [flyingOut, setFlyingOut] = useState(false);
+  const prevTrickRef = useRef(trick);
+
+  // 1) Detect newly played cards and append them in order
+  useEffect(() => {
+    const newPlays: Array<{ player: PlayerId; card: CardType }> = [];
+    for (const p of playOrder) {
+      if (!prevTrickRef.current[p] && trick[p]) {
+        newPlays.push({ player: p, card: trick[p]! });
+      }
+    }
+    if (newPlays.length) {
+      setCards((old) =>
+        [...old, ...newPlays].sort(
+          (a, b) =>
+            playOrder.indexOf(a.player) - playOrder.indexOf(b.player)
+        )
+      );
+      setFlyingOut(false);
+    }
+    prevTrickRef.current = trick;
+  }, [trick]);
+
+  // 2) When four cards present and winner known, trigger fly-out and reset
+  useEffect(() => {
+    if (cards.length === 4 && winner) {
+      // Wait before starting fly-out to let user see completed trick
+      const t1 = setTimeout(() => setFlyingOut(true), 2000);
+      // After brief fly-out, clear and notify
+      const t2 = setTimeout(() => {
+        setCards([]);
+        setFlyingOut(false);
+        if (onFlyOutEnd) onFlyOutEnd();
+      }, 2200);
+      return () => {
+        clearTimeout(t1);
+        clearTimeout(t2);
+      };
+    }
+  }, [cards, winner, onFlyOutEnd]);
+
   return (
-    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-      <div className="bg-black/60 text-white rounded p-3 mb-2">
-        Current Trick:
-      </div>
-      <div className="flex gap-4">
-        {(["north", "east", "south", "west"] as PlayerId[]).map((p) => (
-          <div
-            key={p}
-            className={`w-16 h-24 flex flex-col items-center justify-center border rounded ${
-              winner === p ? "ring-2 ring-green-400" : ""
-            }`}
-          >
-            {trick[p] ? (
-              <>
-                <div>{trick[p]!.rank}</div>
-                <div className="text-xs">{trick[p]!.suit}</div>
-              </>
-            ) : (
-              <div className="text-gray-400">—</div>
-            )}
-            <div className="text-xs mt-1 capitalize">{p}</div>
-          </div>
-        ))}
-      </div>
+    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+      <AnimatePresence>
+        {cards.map(({ player, card }, idx) => {
+          const target = flyingOut && winner
+            ? seatOffsets[winner]
+            : centerSlots[player];
+
+          return (
+            <motion.div
+              key={player}
+              initial={seatOffsets[player]}
+              animate={{
+                x: target.x,
+                y: target.y,
+                rotate: target.rotate,
+                scale: flyingOut ? 0.6 : 1,
+                opacity: 1,
+              }}
+              exit={{ opacity: 0 }}
+              transition={{
+                type: "spring",
+                stiffness: 300,
+                damping: 25,
+                delay: flyingOut ? 0 : idx * 0.1,
+              }}
+              style={{ position: "absolute", zIndex: idx + 1 }}
+            >
+              <Card card={card} faceUp />
+            </motion.div>
+          );
+        })}
+      </AnimatePresence>
     </div>
   );
 };
