@@ -1,7 +1,5 @@
-// src/App.tsx
 import React, { useState, useEffect } from "react";
 import { io, Socket } from "socket.io-client";
-
 import { useGameState } from "./hooks/useGameState";
 import { Table } from "./components/Table";
 import { Scoreboard } from "./components/Scoreboard";
@@ -11,13 +9,13 @@ import { GameOverPopup } from "./components/GameOverPopup";
 import { NameInputPopup } from "./components/NameInputPopup";
 import { Lobby } from "./components/Lobby";
 import type { Card, PlayerId, GameState } from "./types/spades";
-
-// fixed server URL
-const SERVER_URL = "https://call-break-server.onrender.com";
+import { SERVER_URL } from "./config";
 
 interface Player {
   id: string;
   name: string;
+  seat?: string;
+  isAI?: boolean;
 }
 interface Room {
   id: string;
@@ -33,6 +31,12 @@ const App: React.FC = () => {
   const [showGameStartPopup, setShowGameStartPopup] = useState(false);
   const [betPopupOpen, setBetPopupOpen] = useState(false);
   const [dashboardOpen, setDashboardOpen] = useState(false);
+  const [seatingNames, setSeatingNames] = useState<Record<PlayerId, string>>({
+    north: "North",
+    east: "East",
+    south: "You",
+    west: "West",
+  });
 
   const {
     state,
@@ -48,7 +52,6 @@ const App: React.FC = () => {
     applyServerState,
   } = useGameState();
 
-  // connect once
   useEffect(() => {
     const sock = io(SERVER_URL, {
       path: "/socket.io",
@@ -60,35 +63,51 @@ const App: React.FC = () => {
     sock.on("rooms_update", (updated: any) => {
       const normalized: Record<string, Room> = {};
       Object.entries(updated).forEach(([id, r]: any) => {
-        normalized[id] = { id, players: r.players, started: r.hasStarted };
+        normalized[id] = {
+          id,
+          players: r.players.map((p: any) => ({
+            id: p.id,
+            name: p.name,
+            seat: p.seat,
+          })),
+          started: r.hasStarted,
+        };
       });
       setRooms(normalized);
     });
 
-    sock.on("room_created", ({ roomId, room }: any) => {
-      setCurrentRoom({ id: roomId, players: room.players });
-    });
-
-    sock.on("joined_room", ({ roomId, room }: any) => {
-      setCurrentRoom({ id: roomId, players: room.players });
-    });
-
     sock.on("room_update", ({ roomId, players }: any) => {
-      setCurrentRoom({ id: roomId, players });
+      setCurrentRoom({
+        id: roomId,
+        players: players.map((p: any) => ({
+          id: p.id,
+          name: p.name,
+          seat: p.seat,
+        })),
+      });
     });
 
-    sock.on("player_joined", ({ name }: any) => {
-      // optional toast/banner
-      console.log(`${name} joined`);
-    });
-
-    sock.on("start_game", (payload: { room: any; initialGameState: GameState }) => {
+    sock.on("start_game", (payload: {
+      room: any;
+      initialGameState: GameState;
+      seating: Record<string, { name: string; isAI: boolean }>;
+    }) => {
       setCurrentRoom(payload.room);
       applyServerState(payload.initialGameState);
+
+      const seating = payload.seating || {};
+
+      setSeatingNames({
+        north: seating.north?.name || "North",
+        east: seating.east?.name || "East",
+        south: seating.south?.name || "You",
+        west: seating.west?.name || "West",
+      });
+
       setShowGameStartPopup(true);
       setTimeout(() => {
         setShowGameStartPopup(false);
-        setBetPopupOpen(true); // open bidding popup
+        setBetPopupOpen(true);
       }, 1500);
     });
 
@@ -101,7 +120,6 @@ const App: React.FC = () => {
     };
   }, [applyServerState]);
 
-  // emitters
   const handleNameSubmit = (name: string) => {
     setPlayerName(name);
     socket?.emit("set_player_name", name);
@@ -146,7 +164,6 @@ const App: React.FC = () => {
     setBetPopupOpen(true);
   };
 
-  // UI flow
   if (!playerName) {
     return <NameInputPopup onNameSubmit={handleNameSubmit} />;
   }
@@ -169,10 +186,15 @@ const App: React.FC = () => {
           playCard={handlePlayCard}
           you="south"
           onEvaluateTrick={evaluateAndAdvanceTrick}
+          nameMap={{
+            north: seatingNames.north,
+            east: seatingNames.east,
+            south: seatingNames.south,
+            west: seatingNames.west,
+          }}
         />
 
         {betPopupOpen && <BetPopup onSelect={handlePlaceBid} />}
-
         {dashboardOpen && (
           <Dashboard history={gameHistory} onClose={() => setDashboardOpen(false)} />
         )}
@@ -184,9 +206,7 @@ const App: React.FC = () => {
           <button
             onClick={() => setDashboardOpen(true)}
             className="p-2 bg-gray-700 text-white rounded-full hover:bg-gray-600"
-            aria-label="Show Game History"
           >
-            {/* icon */}
             History
           </button>
           <button
@@ -203,10 +223,7 @@ const App: React.FC = () => {
               <span className="font-semibold">Your Bid:</span> {state.bids.south}
             </div>
             <div className="absolute bottom-4 right-4 z-20">
-              <Scoreboard
-                bids={state.bids}
-                tricksWon={state.tricksWon}
-              />
+              <Scoreboard bids={state.bids} tricksWon={state.tricksWon} />
             </div>
           </>
         )}
@@ -226,7 +243,9 @@ const App: React.FC = () => {
           </p>
           <div className="space-y-2">
             {currentRoom.players.map((p) => (
-              <p key={p.id}>{p.name} has joined.</p>
+              <p key={p.id}>
+                {p.name} {p.seat ? `(${p.seat})` : ""} has joined.
+              </p>
             ))}
           </div>
         </div>

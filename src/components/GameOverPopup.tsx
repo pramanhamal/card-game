@@ -1,29 +1,36 @@
-// src/components/GameOverPopup.tsx
 import React from "react";
+import type { PlayerId } from "../types/spades";
 
-interface GameOverPopupProps {
-  totalScores: Record<string, number>;
+interface Props {
+  totalScores: Record<PlayerId, number>;
   onPlayAgain: () => void;
 }
 
-export const GameOverPopup: React.FC<GameOverPopupProps> = ({
+export const GameOverPopup: React.FC<Props> = ({
   totalScores,
   onPlayAgain,
 }) => {
+  const highest = Math.max(...Object.values(totalScores));
+  const winners = (Object.keys(totalScores) as PlayerId[]).filter(
+    (p) => totalScores[p] === highest
+  );
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-6">
-      <div className="bg-white rounded-lg p-6 max-w-md w-full">
-        <h2 className="text-xl font-bold mb-4">Game Over</h2>
+    <div className="fixed inset-0 flex items-center justify-center bg-black/70 p-4">
+      <div className="bg-white rounded p-6 shadow w-full max-w-md text-center">
+        <h2 className="text-2xl font-bold mb-2">Game Over</h2>
+        <p className="mb-4">
+          Winner: {winners.map((w) => w.toUpperCase()).join(", ")}
+        </p>
         <div className="mb-4">
-          {Object.entries(totalScores).map(([player, score]) => (
-            <div key={player}>
-              <strong>{player}:</strong> {score}
+          {Object.entries(totalScores).map(([p, s]) => (
+            <div key={p}>
+              {p.toUpperCase()}: {s}
             </div>
           ))}
         </div>
         <button
           onClick={onPlayAgain}
-          className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700"
+          className="px-4 py-2 bg-blue-600 text-white rounded"
         >
           Play Again
         </button>

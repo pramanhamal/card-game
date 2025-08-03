@@ -51,7 +51,7 @@ function dealHands(deck) {
 function initializeGame() {
   const deck = createDeck();
   const hands = dealHands(deck);
-  const turn = SEAT_ORDER[Math.floor(Math.random() * 4)];
+  const turn = SEAT_ORDER[Math.floor(Math.random() * SEAT_ORDER.length)];
   return {
     deck,
     hands,
@@ -127,9 +127,26 @@ function calculateScores(bids, tricksWon) {
   return result;
 }
 
+function legalMoves(state, player) {
+  const hand = state.hands[player];
+  const trick = state.trick;
+  const leadEntry = Object.entries(trick).find(([, c]) => c !== null);
+  const leadSuit = leadEntry && leadEntry[1] ? leadEntry[1].suit : null;
+
+  if (!leadSuit) {
+    return [...hand];
+  }
+  const hasLead = hand.some((c) => c.suit === leadSuit);
+  if (hasLead) {
+    return hand.filter((c) => c.suit === leadSuit);
+  }
+  return [...hand];
+}
+
 export {
   initializeGame,
   playCard,
   evaluateTrick,
   calculateScores,
+  legalMoves,
 };

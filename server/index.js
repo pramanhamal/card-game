@@ -8,13 +8,12 @@ import {
   playCard,
   evaluateTrick,
   calculateScores,
-} from "./utils/gameLogic.js"; // adjust path if compiled
-
-// NOTE: If you compile TS to JS, adjust imports. This assumes ESM.
+  legalMoves,
+} from "./utils/gameLogic.js";
 
 const app = express();
-const server = http.createServer(app);
-const io = new Server(server, {
+const httpServer = http.createServer(app);
+const io = new Server(httpServer, {
   path: "/socket.io",
   cors: {
     origin: ["https://callbreak-hxwr.onrender.com"],
@@ -23,8 +22,10 @@ const io = new Server(server, {
   },
 });
 
-// In-memory room store
-/** roomId -> { players: Map<socketId, { socketId, name }>, gameState: GameState | null } */
+const SEAT_ORDER = ["north", "east", "south", "west"];
+const nano = customAlphabet("abcdefghijklmnopqrstuvwxyz0123456789", 6);
+
+// Rooms: roomId => { players: Map<socketId, { id, socketId, name, seat }>, gameState }
 const rooms = new Map();
 
 function broadcastLobby() {
@@ -34,11 +35,36 @@ function broadcastLobby() {
       players: Array.from(room.players.values()).map((p) => ({
         id: p.socketId,
         name: p.name,
+        seat: p.seat,
       })),
       hasStarted: !!room.gameState,
     };
   }
   io.emit("rooms_update", summary);
+}
+
+function assignSeat(room, socketId) {
+  const taken = new Set(Array.from(room.players.values()).map((p) => p.seat));
+  for (const seat of SEAT_ORDER) {
+    if (!taken.has(seat)) {
+      const player = room.players.get(socketId);
+      if (player) player.seat = seat;
+      return seat;
+    }
+  }
+  return null;
+}
+
+function getSeatingInfo(room) {
+  const seating = {};
+  for (const p of room.players.values()) {
+    if (!p.seat) continue;
+    seating[p.seat] = {
+      name: p.name,
+      isAI: false,
+    };
+  }
+  return seating;
 }
 
 io.on("connection", (socket) => {
@@ -50,17 +76,31 @@ io.on("connection", (socket) => {
   });
 
   socket.on("create_room", () => {
-    const nano = customAlphabet("abcdefghijklmnopqrstuvwxyz0123456789", 6);
     const roomId = nano();
-    rooms.set(roomId, {
-      players: new Map([[socket.id, { socketId: socket.id, name: socket.data.name }]]),
+    const room = {
+      players: new Map([
+        [
+          socket.id,
+          {
+            id: socket.id,
+            socketId: socket.id,
+            name: socket.data.name,
+            seat: null,
+          },
+        ],
+      ]),
       gameState: null,
-    });
+    };
+    rooms.set(roomId, room);
     socket.join(roomId);
-    io.to(roomId).emit("room_update", {
-      roomId,
-      players: [{ id: socket.id, name: socket.data.name }],
-    });
+    assignSeat(room, socket.id); // first player gets north (or first free)
+
+    const playersList = Array.from(room.players.values()).map((p) => ({
+      id: p.socketId,
+      name: p.name,
+      seat: p.seat,
+    }));
+    io.to(roomId).emit("room_update", { roomId, players: playersList });
     broadcastLobby();
   });
 
@@ -70,33 +110,35 @@ io.on("connection", (socket) => {
       socket.emit("error", "Room not found");
       return;
     }
-    room.players.set(socket.id, { socketId: socket.id, name: socket.data.name });
+
+    room.players.set(socket.id, {
+      id: socket.id,
+      socketId: socket.id,
+      name: socket.data.name,
+      seat: null,
+    });
     socket.join(roomId);
+    assignSeat(room, socket.id);
+
     const playersList = Array.from(room.players.values()).map((p) => ({
       id: p.socketId,
       name: p.name,
+      seat: p.seat,
     }));
-    io.to(roomId).emit("player_joined", { id: socket.id, name: socket.data.name });
-    io.to(roomId).emit("room_update", {
-      roomId,
-      players: playersList,
-    });
-    socket.emit("joined_room", { roomId, room: { players: playersList } });
+
+    io.to(roomId).emit("room_update", { roomId, players: playersList });
     broadcastLobby();
 
-    // auto-start when 4 players
+    // auto-start when 4 humans present
     if (room.players.size === 4 && !room.gameState) {
       const gameState = initializeGame();
       room.gameState = gameState;
-      // broadcast start_game with full state to all in room
+
       io.to(roomId).emit("start_game", {
-        room: {
-          id: roomId,
-          players: playersList,
-        },
+        room: { id: roomId, players: playersList },
         initialGameState: gameState,
+        seating: getSeatingInfo(room),
       });
-      broadcastLobby();
     }
   });
 
@@ -104,18 +146,22 @@ io.on("connection", (socket) => {
     const room = rooms.get(roomId);
     if (!room || !room.gameState) return;
     room.gameState.bids[playerId] = bid;
-    // broadcast updated game state
     io.to(roomId).emit("game_state_update", room.gameState);
   });
 
   socket.on("play_card", ({ roomId, playerId, card }) => {
     const room = rooms.get(roomId);
     if (!room || !room.gameState) return;
-    // apply play
+
     playCard(room.gameState, playerId, card);
-    // if trick just completed, evaluate trick (internal to playCard)
-    // optional: if hand finished, compute final scores
     io.to(roomId).emit("game_state_update", room.gameState);
+  });
+
+  socket.on("request_state", ({ roomId }) => {
+    const room = rooms.get(roomId);
+    if (room && room.gameState) {
+      io.to(socket.id).emit("game_state_update", room.gameState);
+    }
   });
 
   socket.on("disconnect", () => {
@@ -125,31 +171,24 @@ io.on("connection", (socket) => {
         const playersList = Array.from(room.players.values()).map((p) => ({
           id: p.socketId,
           name: p.name,
+          seat: p.seat,
         }));
         io.to(roomId).emit("room_update", { roomId, players: playersList });
         if (room.players.size === 0) {
           rooms.delete(roomId);
         } else {
-          room.gameState = null; // optional: pause/reset
+          room.gameState = null; // require restart
         }
         broadcastLobby();
         break;
       }
     }
   });
-
-  // health
-  socket.on("request_state", ({ roomId }) => {
-    const room = rooms.get(roomId);
-    if (room && room.gameState) {
-      socket.emit("game_state_update", room.gameState);
-    }
-  });
 });
 
-app.get("/health", (req, res) => {
-  res.json({ ok: true });
-});
+app.get("/health", (_, res) => res.json({ ok: true }));
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log("Server listening on", PORT));
+httpServer.listen(PORT, () => {
+  console.log("Server listening on", PORT);
+});

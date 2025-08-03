@@ -1,12 +1,19 @@
 // src/utils/gameLogic.ts
-import { PlayerId, Card, GameState, Rank, Suit } from "../types/spades";
+import type { GameState, PlayerId, Card, Rank } from "../types/spades";
 
-/** Constants */
 export const SEAT_ORDER: PlayerId[] = ["north", "east", "south", "west"];
-export const SUITS: Suit[] = ["spades", "hearts", "diamonds", "clubs"];
-export const RANKS: Rank[] = [2, 3, 4, 5, 6, 7, 8, 9, 10, "J", "Q", "K", "A"];
+const SUITS: Card["suit"][] = ["spades", "hearts", "diamonds", "clubs"];
+const RANKS: Rank[] = [2, 3, 4, 5, 6, 7, 8, 9, 10, "J", "Q", "K", "A"];
 
-/** Rank numeric ordering for comparisons */
+function shuffle<T>(arr: T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
 function rankValue(rank: Rank): number {
   if (typeof rank === "number") return rank;
   switch (rank) {
@@ -23,7 +30,6 @@ function rankValue(rank: Rank): number {
   }
 }
 
-/** Create and shuffle deck */
 function createDeck(): Card[] {
   const deck: Card[] = [];
   for (const suit of SUITS) {
@@ -34,16 +40,6 @@ function createDeck(): Card[] {
   return shuffle(deck);
 }
 
-function shuffle<T>(arr: T[]): T[] {
-  const a = [...arr];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
-
-/** Deal hands evenly (13 each) */
 function dealHands(deck: Card[]): Record<PlayerId, Card[]> {
   return {
     north: deck.slice(0, 13),
@@ -53,11 +49,10 @@ function dealHands(deck: Card[]): Record<PlayerId, Card[]> {
   };
 }
 
-/** Initialize a new game state */
 export function initializeGame(): GameState {
   const deck = createDeck();
   const hands = dealHands(deck);
-  const turn = SEAT_ORDER[Math.floor(Math.random() * 4)]; // random starting player
+  const turn = SEAT_ORDER[Math.floor(Math.random() * SEAT_ORDER.length)];
   return {
     deck,
     hands,
@@ -70,24 +65,16 @@ export function initializeGame(): GameState {
   };
 }
 
-/** Determine legal moves for a given player given current trick */
 export function legalMoves(state: GameState, player: PlayerId): Card[] {
   const hand = state.hands[player];
   const trick = state.trick;
-  const leadSuit = Object.values(trick).find((c) => c !== null)
-    ? (() => {
-        const entries = Object.entries(trick) as [PlayerId, Card | null][];
-        const lead = entries.find(([, c]) => c !== null);
-        return lead && lead[1] ? lead[1].suit : null;
-      })()
-    : null;
+  const leadSuit = Object.entries(trick)
+    .find(([, c]) => c !== null)?.[1]?.suit || null;
 
   if (!leadSuit) {
-    // no lead yet: any card is legal (ignore spades-breaking nuance for simplicity)
     return [...hand];
   }
 
-  // if player has any card of leadSuit, must follow
   const hasLead = hand.some((c) => c.suit === leadSuit);
   if (hasLead) {
     return hand.filter((c) => c.suit === leadSuit);
@@ -95,73 +82,75 @@ export function legalMoves(state: GameState, player: PlayerId): Card[] {
   return [...hand];
 }
 
-/** Evaluate trick winner, update tricksWon, clear trick, set next turn */
-export function evaluateTrick(state: GameState): PlayerId {
-  const trickEntries = Object.entries(state.trick) as [PlayerId, Card | null][];
-  if (trickEntries.some(([, c]) => c === null)) {
-    throw new Error("Trick is incomplete");
+export function determineTrickWinner(
+  trick: Record<PlayerId, Card | null>
+): PlayerId {
+  const entries = Object.entries(trick) as [PlayerId, Card | null][];
+  if (entries.some(([, c]) => c === null)) {
+    throw new Error("Trick incomplete");
   }
-  // Determine lead suit (first non-null)
-  const leadEntry = trickEntries.find(([, c]) => c !== null);
-  const leadSuit = leadEntry && leadEntry[1] ? leadEntry[1].suit : null;
 
-  // Trump is spades
-  const trumpPlays = trickEntries
+  // Lead suit is the suit of the first non-null card
+  const leadSuit =
+    entries.find(([, c]) => c !== null)?.[1]?.suit || null;
+
+  // Trump (spades) plays
+  const trumpPlays: [PlayerId, Card][] = entries
     .filter(([, c]) => c && c.suit === "spades")
-    .map(([p, c]) => [p, c] as [PlayerId, Card]);
+    .map(([p, c]) => [p, c as Card]);
 
-  const contenders =
-    trumpPlays.length > 0
-      ? trumpPlays
-      : trickEntries
-          .filter(([, c]) => c && c.suit === leadSuit)
-          .map(([p, c]) => [p, c] as [PlayerId, Card]);
+  let contenders: [PlayerId, Card][];
+  if (trumpPlays.length > 0) {
+    contenders = trumpPlays;
+  } else if (leadSuit) {
+    contenders = entries
+      .filter(([, c]) => c && c.suit === leadSuit)
+      .map(([p, c]) => [p, c as Card]);
+  } else {
+    // Shouldn't happen if trick is full, fallback defensively
+    contenders = entries
+      .filter(([, c]) => c !== null)
+      .map(([p, c]) => [p, c as Card]);
+  }
 
   const winner = contenders.reduce((best, current) => {
     const bestCard = best[1];
     const currCard = current[1];
-    return rankValue(currCard.rank) > rankValue(bestCard.rank) ? current : best;
+    return rankValue(currCard.rank) > rankValue(bestCard.rank)
+      ? current
+      : best;
   })[0];
-
-  // award trick
-  state.tricksWon[winner] = (state.tricksWon[winner] ?? 0) + 1;
-
-  // clear trick
-  state.trick = { north: null, east: null, south: null, west: null };
-
-  // next turn is winner
-  state.turn = winner;
 
   return winner;
 }
 
-/** Apply a play (card) by a player, handling finishing the trick if needed */
-export function playCard(state: GameState, player: PlayerId, card: Card): void {
-  if (state.turn !== player) return; // not player's turn
-
-  // remove card from hand
-  const idx = state.hands[player].findIndex(
+export function playCard(
+  state: GameState,
+  player: PlayerId,
+  card: Card
+): void {
+  if (state.turn !== player) return;
+  const hand = state.hands[player];
+  const idx = hand.findIndex(
     (c) => c.suit === card.suit && c.rank === card.rank
   );
   if (idx === -1) return;
-  state.hands[player].splice(idx, 1);
-
-  // place into trick
+  hand.splice(idx, 1);
   state.trick[player] = card;
 
-  // advance turn to next seat (if trick not full)
-  const trickFilled = Object.values(state.trick).every((c) => c !== null);
-  if (trickFilled) {
-    evaluateTrick(state);
+  const full = Object.values(state.trick).every((c) => c !== null);
+  if (full) {
+    const winner = determineTrickWinner(state.trick);
+    state.tricksWon[winner] = (state.tricksWon[winner] ?? 0) + 1;
+    state.trick = { north: null, east: null, south: null, west: null };
+    state.turn = winner;
   } else {
-    // find next seat in order
     const currentIdx = SEAT_ORDER.indexOf(player);
     const nextIdx = (currentIdx + 1) % SEAT_ORDER.length;
     state.turn = SEAT_ORDER[nextIdx];
   }
 }
 
-/** Final scoring from bids & tricksWon (simple version) */
 export function calculateScores(
   bids: Record<PlayerId, number>,
   tricksWon: Record<PlayerId, number>
@@ -175,7 +164,7 @@ export function calculateScores(
   for (const pid of SEAT_ORDER) {
     const bid = bids[pid];
     const won = tricksWon[pid];
-    result[pid] = won < bid ? -bid : bid + (won - bid) * 0.1;
+    result[pid] = won < bid ? -bid : bid + (won - bid);
   }
   return result;
 }

@@ -1,6 +1,5 @@
-// src/hooks/useGameState.ts
 import { useState, useCallback } from "react";
-import {
+import type {
   GameState,
   PlayerId,
   Card,
@@ -8,37 +7,29 @@ import {
 } from "../types/spades";
 import {
   initializeGame,
-  legalMoves,
   playCard as logicPlayCard,
-  evaluateTrick,
+  determineTrickWinner,
   calculateScores,
 } from "../utils/gameLogic";
 
-/** Simplified version of your hook that allows overriding from server */
 export function useGameState(initial?: GameState) {
-  const [state, setState] = useState<GameState>(
-    initial ?? {
-      ...initializeGame(),
-    }
-  );
+  const [state, setState] = useState<GameState>(initial ?? initializeGame());
   const [history, setHistory] = useState<GameResult[]>([]);
   const [isHandOver, setIsHandOver] = useState(false);
   const [isGameOver, setIsGameOver] = useState(false);
 
-  const totalScores = history.reduce(
-    (acc, r) => {
-      (Object.keys(r.totalScores) as PlayerId[]).forEach((p) => {
-        acc[p] = (acc[p] ?? 0) + (r.totalScores[p] ?? 0);
-      });
-      return acc;
-    },
-    { north: 0, east: 0, south: 0, west: 0 } as Record<PlayerId, number>
-  );
+  const totalScores = history.reduce((acc, r) => {
+    (Object.keys(r.totalScores) as PlayerId[]).forEach((p) => {
+      acc[p] = (acc[p] ?? 0) + (r.totalScores[p] ?? 0);
+    });
+    return acc;
+  }, { north: 0, east: 0, south: 0, west: 0 } as Record<PlayerId, number>);
 
   const startGame = useCallback(() => {
-    setState({ ...initializeGame() });
+    setState(initializeGame());
     setIsHandOver(false);
     setIsGameOver(false);
+    setHistory([]);
   }, []);
 
   const placeBid = useCallback((player: PlayerId, bid: number) => {
@@ -50,23 +41,19 @@ export function useGameState(initial?: GameState) {
 
   const playCard = useCallback((player: PlayerId, card: Card) => {
     setState((prev) => {
-      const copy = structuredClone(prev);
+      const copy = structuredClone(prev) as GameState;
       logicPlayCard(copy, player, card);
-      // if trick just finished, maybe evaluate scores
       return copy;
     });
   }, []);
 
   const evaluateAndAdvanceTrick = useCallback(() => {
     setState((prev) => {
-      const copy = structuredClone(prev);
-      evaluateTrick(copy);
-      // if hand over (all cards gone), mark
+      const copy = structuredClone(prev) as GameState;
       const isHandDone = Object.values(copy.hands).every((h) => h.length === 0);
       if (isHandDone) {
         setIsHandOver(true);
         const scores = calculateScores(copy.bids, copy.tricksWon);
-        // push to history
         setHistory((h) => [
           ...h,
           {
@@ -84,10 +71,8 @@ export function useGameState(initial?: GameState) {
 
   const resetGame = useCallback(() => {
     startGame();
-    setHistory([]);
   }, [startGame]);
 
-  /** Replace internal state from authoritative server state */
   const applyServerState = useCallback((serverState: GameState) => {
     setState(serverState);
   }, []);
