@@ -163,7 +163,9 @@ export const Table: React.FC<TableProps> = ({
               <div
                 onClick={canPlay ? () => playCard(you, c) : undefined}
                 className={`inline-block rounded-md ${
-                  canPlay ? "cursor-pointer" : "pointer-events-none cursor-not-allowed"
+                  canPlay
+                    ? "cursor-pointer"
+                    : "pointer-events-none cursor-not-allowed"
                 }`}
               >
                 <Card card={c} faceUp />

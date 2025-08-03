@@ -22,7 +22,7 @@ const io = new Server(httpServer, {
 const SEAT_ORDER = ["north", "east", "south", "west"];
 const nano = customAlphabet("abcdefghijklmnopqrstuvwxyz0123456789", 6);
 
-// Structure: roomId -> { players: Map<socketId, { id, socketId, name, seat }>, gameState }
+// roomId -> { players: Map<socketId, { id, socketId, name, seat }>, gameState }
 const rooms = new Map();
 
 function broadcastLobby() {
@@ -92,7 +92,6 @@ io.on("connection", (socket) => {
     socket.join(roomId);
     assignSeat(room, socket.id);
 
-    // send assigned seat to creator
     const player = room.players.get(socket.id);
     if (player && player.seat) {
       socket.emit("assigned_seat", { seat: player.seat });
@@ -123,7 +122,6 @@ io.on("connection", (socket) => {
     socket.join(roomId);
     assignSeat(room, socket.id);
 
-    // send assigned seat to this joiner
     const player = room.players.get(socket.id);
     if (player && player.seat) {
       socket.emit("assigned_seat", { seat: player.seat });

@@ -35,7 +35,7 @@ const App: React.FC = () => {
   const [seatingNames, setSeatingNames] = useState<Record<PlayerId, string>>({
     north: "North",
     east: "East",
-    south: "You",
+    south: "South",
     west: "West",
   });
 
@@ -92,29 +92,32 @@ const App: React.FC = () => {
       setYourSeat(seat);
     });
 
-    sock.on("start_game", (payload: {
-      room: any;
-      initialGameState: GameState;
-      seating: Record<string, { name: string; isAI: boolean }>;
-    }) => {
-      setCurrentRoom(payload.room);
-      applyServerState(payload.initialGameState);
+    sock.on(
+      "start_game",
+      (payload: {
+        room: any;
+        initialGameState: GameState;
+        seating: Record<string, { name: string; isAI: boolean }>;
+      }) => {
+        setCurrentRoom(payload.room);
+        applyServerState(payload.initialGameState);
 
-      const seating = payload.seating || {};
+        const seating = payload.seating || {};
 
-      setSeatingNames({
-        north: seating.north?.name || "North",
-        east: seating.east?.name || "East",
-        south: seating.south?.name || "You",
-        west: seating.west?.name || "West",
-      });
+        setSeatingNames({
+          north: seating.north?.name || "North",
+          east: seating.east?.name || "East",
+          south: seating.south?.name || "South",
+          west: seating.west?.name || "West",
+        });
 
-      setShowGameStartPopup(true);
-      setTimeout(() => {
-        setShowGameStartPopup(false);
-        setBetPopupOpen(true);
-      }, 1500);
-    });
+        setShowGameStartPopup(true);
+        setTimeout(() => {
+          setShowGameStartPopup(false);
+          setBetPopupOpen(true);
+        }, 1500);
+      }
+    );
 
     sock.on("game_state_update", (newState: GameState) => {
       applyServerState(newState);
@@ -198,6 +201,14 @@ const App: React.FC = () => {
         <div className="absolute top-2 left-2 text-white px-2 py-1 bg-gray-800 rounded">
           You are: {yourSeat.toUpperCase()}
         </div>
+        <div className="absolute top-2 right-2 bg-black bg-opacity-50 text-white px-3 py-2 rounded flex gap-2 text-sm">
+          {(["north", "east", "south", "west"] as PlayerId[]).map((p) => (
+            <div key={p}>
+              {p.toUpperCase()}: {seatingNames[p]}
+              {yourSeat === p ? " (You)" : ""}
+            </div>
+          ))}
+        </div>
 
         <Table
           state={state}
@@ -214,7 +225,12 @@ const App: React.FC = () => {
 
         {betPopupOpen && <BetPopup onSelect={handlePlaceBid} />}
         {dashboardOpen && (
-          <Dashboard history={gameHistory} onClose={() => setDashboardOpen(false)} />
+          <Dashboard
+            history={gameHistory}
+            onClose={() => setDashboardOpen(false)}
+            playerNames={seatingNames}
+            yourSeat={yourSeat}
+          />
         )}
         {isGameOver && (
           <GameOverPopup totalScores={totalScores} onPlayAgain={handlePlayAgain} />
@@ -238,10 +254,16 @@ const App: React.FC = () => {
         {!betPopupOpen && !isGameOver && (
           <>
             <div className="absolute top-4 left-4 bg-black bg-opacity-50 text-white px-3 py-1 rounded">
-              <span className="font-semibold">Your Bid:</span> {state.bids[yourSeat]}
+              <span className="font-semibold">Your Bid:</span>{" "}
+              {state.bids[yourSeat]}
             </div>
             <div className="absolute bottom-4 right-4 z-20">
-              <Scoreboard bids={state.bids} tricksWon={state.tricksWon} />
+              <Scoreboard
+                bids={state.bids}
+                tricksWon={state.tricksWon}
+                nameMap={seatingNames}
+                yourSeat={yourSeat}
+              />
             </div>
           </>
         )}
@@ -272,11 +294,7 @@ const App: React.FC = () => {
   }
 
   return (
-    <Lobby
-      rooms={rooms}
-      onCreateRoom={handleCreateRoom}
-      onJoinRoom={handleJoinRoom}
-    />
+    <Lobby rooms={rooms} onCreateRoom={handleCreateRoom} onJoinRoom={handleJoinRoom} />
   );
 };
 

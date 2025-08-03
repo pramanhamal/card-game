@@ -6,7 +6,12 @@ interface Props extends React.HTMLAttributes<HTMLDivElement> {
   faceUp?: boolean;
 }
 
-export const Card: React.FC<Props> = ({ card, faceUp = false, className = "", ...rest }) => {
+export const Card: React.FC<Props> = ({
+  card,
+  faceUp = false,
+  className = "",
+  ...rest
+}) => {
   return (
     <div
       {...rest}

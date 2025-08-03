@@ -8,7 +8,6 @@ import type {
 import {
   initializeGame,
   playCard as logicPlayCard,
-  determineTrickWinner,
   calculateScores,
 } from "../utils/gameLogic";
 
