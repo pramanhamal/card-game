@@ -1,4 +1,3 @@
-// src/utils/gameLogic.ts
 import type { GameState, PlayerId, Card, Rank } from "../types/spades";
 
 export const SEAT_ORDER: PlayerId[] = ["north", "east", "south", "west"];
@@ -67,13 +66,10 @@ export function initializeGame(): GameState {
 
 export function legalMoves(state: GameState, player: PlayerId): Card[] {
   const hand = state.hands[player];
-  const trick = state.trick;
-  const leadSuit = Object.entries(trick)
-    .find(([, c]) => c !== null)?.[1]?.suit || null;
+  const leadSuit =
+    Object.entries(state.trick).find(([, c]) => c !== null)?.[1]?.suit || null;
 
-  if (!leadSuit) {
-    return [...hand];
-  }
+  if (!leadSuit) return [...hand];
 
   const hasLead = hand.some((c) => c.suit === leadSuit);
   if (hasLead) {
@@ -90,11 +86,9 @@ export function determineTrickWinner(
     throw new Error("Trick incomplete");
   }
 
-  // Lead suit is the suit of the first non-null card
   const leadSuit =
     entries.find(([, c]) => c !== null)?.[1]?.suit || null;
 
-  // Trump (spades) plays
   const trumpPlays: [PlayerId, Card][] = entries
     .filter(([, c]) => c && c.suit === "spades")
     .map(([p, c]) => [p, c as Card]);
@@ -107,7 +101,6 @@ export function determineTrickWinner(
       .filter(([, c]) => c && c.suit === leadSuit)
       .map(([p, c]) => [p, c as Card]);
   } else {
-    // Shouldn't happen if trick is full, fallback defensively
     contenders = entries
       .filter(([, c]) => c !== null)
       .map(([p, c]) => [p, c as Card]);

@@ -6,9 +6,6 @@ import { customAlphabet } from "nanoid";
 import {
   initializeGame,
   playCard,
-  evaluateTrick,
-  calculateScores,
-  legalMoves,
 } from "./utils/gameLogic.js";
 
 const app = express();
@@ -25,7 +22,7 @@ const io = new Server(httpServer, {
 const SEAT_ORDER = ["north", "east", "south", "west"];
 const nano = customAlphabet("abcdefghijklmnopqrstuvwxyz0123456789", 6);
 
-// Rooms: roomId => { players: Map<socketId, { id, socketId, name, seat }>, gameState }
+// Structure: roomId -> { players: Map<socketId, { id, socketId, name, seat }>, gameState }
 const rooms = new Map();
 
 function broadcastLobby() {
@@ -93,7 +90,13 @@ io.on("connection", (socket) => {
     };
     rooms.set(roomId, room);
     socket.join(roomId);
-    assignSeat(room, socket.id); // first player gets north (or first free)
+    assignSeat(room, socket.id);
+
+    // send assigned seat to creator
+    const player = room.players.get(socket.id);
+    if (player && player.seat) {
+      socket.emit("assigned_seat", { seat: player.seat });
+    }
 
     const playersList = Array.from(room.players.values()).map((p) => ({
       id: p.socketId,
@@ -120,6 +123,12 @@ io.on("connection", (socket) => {
     socket.join(roomId);
     assignSeat(room, socket.id);
 
+    // send assigned seat to this joiner
+    const player = room.players.get(socket.id);
+    if (player && player.seat) {
+      socket.emit("assigned_seat", { seat: player.seat });
+    }
+
     const playersList = Array.from(room.players.values()).map((p) => ({
       id: p.socketId,
       name: p.name,
@@ -129,7 +138,6 @@ io.on("connection", (socket) => {
     io.to(roomId).emit("room_update", { roomId, players: playersList });
     broadcastLobby();
 
-    // auto-start when 4 humans present
     if (room.players.size === 4 && !room.gameState) {
       const gameState = initializeGame();
       room.gameState = gameState;
@@ -177,7 +185,7 @@ io.on("connection", (socket) => {
         if (room.players.size === 0) {
           rooms.delete(roomId);
         } else {
-          room.gameState = null; // require restart
+          room.gameState = null;
         }
         broadcastLobby();
         break;

@@ -15,8 +15,8 @@ interface Player {
   id: string;
   name: string;
   seat?: string;
-  isAI?: boolean;
 }
+
 interface Room {
   id: string;
   players: Player[];
@@ -28,6 +28,7 @@ const App: React.FC = () => {
   const [playerName, setPlayerName] = useState<string>("");
   const [rooms, setRooms] = useState<Record<string, Room>>({});
   const [currentRoom, setCurrentRoom] = useState<Room | null>(null);
+  const [yourSeat, setYourSeat] = useState<PlayerId | null>(null);
   const [showGameStartPopup, setShowGameStartPopup] = useState(false);
   const [betPopupOpen, setBetPopupOpen] = useState(false);
   const [dashboardOpen, setDashboardOpen] = useState(false);
@@ -87,6 +88,10 @@ const App: React.FC = () => {
       });
     });
 
+    sock.on("assigned_seat", ({ seat }: { seat: PlayerId }) => {
+      setYourSeat(seat);
+    });
+
     sock.on("start_game", (payload: {
       room: any;
       initialGameState: GameState;
@@ -131,25 +136,24 @@ const App: React.FC = () => {
 
   const handleJoinRoom = (roomId: string) => {
     socket?.emit("join_room", roomId);
-    setCurrentRoom((prev) => (prev ? { id: roomId, players: prev.players } : null));
   };
 
   const handlePlaceBid = (bid: number) => {
-    if (!currentRoom) return;
-    placeBid("south", bid);
+    if (!currentRoom || !yourSeat) return;
+    placeBid(yourSeat, bid);
     socket?.emit("place_bid", {
       roomId: currentRoom.id,
-      playerId: "south",
+      playerId: yourSeat,
       bid,
     });
     setBetPopupOpen(false);
   };
 
   const handlePlayCard = (player: PlayerId, card: Card) => {
-    if (!currentRoom) return;
+    if (!currentRoom || !yourSeat) return;
     socket?.emit("play_card", {
       roomId: currentRoom.id,
-      playerId: player,
+      playerId: yourSeat,
       card,
     });
   };
@@ -178,13 +182,27 @@ const App: React.FC = () => {
     );
   }
 
-  if (state && currentRoom && !isGameOver) {
+  if (!yourSeat && currentRoom) {
+    return (
+      <div className="fixed inset-0 flex items-center justify-center text-white">
+        <div className="bg-black bg-opacity-60 p-6 rounded">
+          Waiting for seat assignment...
+        </div>
+      </div>
+    );
+  }
+
+  if (state && currentRoom && yourSeat && !isGameOver) {
     return (
       <div className="fixed inset-0 bg-teal-800 overflow-hidden">
+        <div className="absolute top-2 left-2 text-white px-2 py-1 bg-gray-800 rounded">
+          You are: {yourSeat.toUpperCase()}
+        </div>
+
         <Table
           state={state}
           playCard={handlePlayCard}
-          you="south"
+          you={yourSeat}
           onEvaluateTrick={evaluateAndAdvanceTrick}
           nameMap={{
             north: seatingNames.north,
@@ -220,7 +238,7 @@ const App: React.FC = () => {
         {!betPopupOpen && !isGameOver && (
           <>
             <div className="absolute top-4 left-4 bg-black bg-opacity-50 text-white px-3 py-1 rounded">
-              <span className="font-semibold">Your Bid:</span> {state.bids.south}
+              <span className="font-semibold">Your Bid:</span> {state.bids[yourSeat]}
             </div>
             <div className="absolute bottom-4 right-4 z-20">
               <Scoreboard bids={state.bids} tricksWon={state.tricksWon} />
