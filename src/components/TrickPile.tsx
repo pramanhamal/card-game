@@ -84,19 +84,19 @@ export const TrickPile: React.FC<TrickPileProps> = ({
     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
       <AnimatePresence>
         {cards.map(({ player, card }, idx) => {
-          const target = flyingOut && winner
-            ? seatOffsets[winner]
-            : centerSlots[player];
+          const isOut = flyingOut && winner;
+          const cardKey = `${player}-${card.suit}-${card.rank}`;
+          const target = isOut ? seatOffsets[player] : centerSlots[player];
 
           return (
             <motion.div
-              key={player}
+              key={cardKey}
               initial={seatOffsets[player]}
               animate={{
                 x: target.x,
                 y: target.y,
                 rotate: target.rotate,
-                scale: flyingOut ? 0.6 : 1,
+                scale: isOut ? 0.6 : 1,
                 opacity: 1,
               }}
               exit={{ opacity: 0 }}
@@ -104,7 +104,7 @@ export const TrickPile: React.FC<TrickPileProps> = ({
                 type: "spring",
                 stiffness: 300,
                 damping: 25,
-                delay: flyingOut ? 0 : idx * 0.1,
+                delay: isOut ? 0 : idx * 0.1,
               }}
               style={{ position: "absolute", zIndex: idx + 1 }}
             >
