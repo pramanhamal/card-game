@@ -7,21 +7,20 @@ import { Card } from "./Card";
 interface TrickPileProps {
   trick: Record<PlayerId, CardType | null>;
   winner: PlayerId | null;
+  seatOf: Record<PlayerId, 'north' | 'east' | 'south' | 'west'>;
   onFlyOutEnd?: () => void;
 }
 
 type Position = { x: number; y: number; rotate: number };
 
-// Base off-screen / starting offsets for each seat
-const seatOffsets: Record<PlayerId, Position> = {
+const seatOffsets: Record<'north' | 'east' | 'south' | 'west', Position> = {
   north: { x: 0, y: -200, rotate: 0 },
   east: { x: 300, y: 0, rotate: 0 },
   west: { x: -300, y: 0, rotate: 0 },
   south: { x: 0, y: 200, rotate: 0 },
 };
 
-// Center positions where cards gather before flying out
-const centerSlots: Record<PlayerId, Position> = {
+const centerSlots: Record<'north' | 'east' | 'south' | 'west', Position> = {
   north: { x: 0, y: -50, rotate: -5 },
   east: { x: 50, y: 0, rotate: 10 },
   west: { x: -50, y: 0, rotate: -8 },
@@ -35,10 +34,9 @@ export const TrickPile: React.FC<TrickPileProps> = ({
   trick,
   winner,
   onFlyOutEnd,
+  seatOf,
 }) => {
-  const [cards, setCards] = useState<Array<{ player: PlayerId; card: CardType }>>(
-    []
-  );
+  const [cards, setCards] = useState<Array<{ player: PlayerId; card: CardType }>>([]);
   const [flyingOut, setFlyingOut] = useState(false);
   const prevTrickRef = useRef(trick);
 
@@ -85,13 +83,13 @@ export const TrickPile: React.FC<TrickPileProps> = ({
       <AnimatePresence>
         {cards.map(({ player, card }, idx) => {
           const isOut = flyingOut && winner;
-          const cardKey = `${player}-${card.suit}-${card.rank}`;
-          const target = isOut ? seatOffsets[player] : centerSlots[player];
+          const seat = seatOf[player];
+          const target = isOut ? seatOffsets[seat] : centerSlots[seat];
 
           return (
             <motion.div
-              key={cardKey}
-              initial={seatOffsets[player]}
+              key={`${player}-${card.suit}-${card.rank}`}
+              initial={seatOffsets[seat]}
               animate={{
                 x: target.x,
                 y: target.y,

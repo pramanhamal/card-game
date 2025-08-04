@@ -68,6 +68,11 @@ export const Table: React.FC<TableProps> = ({
     east: clockwiseFromYou[3],
   };
 
+  const seatOf: Record<PlayerId, 'north' | 'east' | 'south' | 'west'> = {} as any;
+  Object.entries(uiMapping).forEach(([seat, pid]) => {
+    seatOf[pid] = seat as 'north' | 'east' | 'south' | 'west';
+  });
+
   // Determine if it's this client's active turn
   const trickIsFull = Object.values(trick).every((c) => c !== null);
   const isMyTurn = turn === you && !trickIsFull;
@@ -143,6 +148,7 @@ export const Table: React.FC<TableProps> = ({
       <TrickPile
         trick={state.trick}
         winner={lastWinner}
+        seatOf={seatOf}
         onFlyOutEnd={onEvaluateTrick}
       />
 
