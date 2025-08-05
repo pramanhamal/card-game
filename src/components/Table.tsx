@@ -47,6 +47,7 @@ export const Table: React.FC<TableProps> = ({
   const prevStateRef = useRef<GameState>(currentState);
 
   useEffect(() => {
+    console.log("--- Table.tsx state updated ---");
     const prevState = prevStateRef.current;
     const prevTrick = prevState.trick;
     const currTrick = currentState.trick;
@@ -54,8 +55,13 @@ export const Table: React.FC<TableProps> = ({
     const prevCount = Object.values(prevTrick).filter(Boolean).length;
     const currCount = Object.values(currTrick).filter(Boolean).length;
 
+    console.log(`[Table] Trick count changed: ${prevCount} -> ${currCount}`);
+
     if (prevCount === 3 && currCount === 0) {
+      console.log("[Table] CRITICAL: Detected 3 -> 0 trick. Reconstructing 4th card.");
       const lastPlayerToPlay = prevState.turn;
+      console.log(`[Table] Last player was: ${lastPlayerToPlay}`);
+      
       if (lastPlayerToPlay) {
         const prevHand = prevState.hands[lastPlayerToPlay] || [];
         const currHand = currentState.hands[lastPlayerToPlay] || [];
@@ -65,13 +71,17 @@ export const Table: React.FC<TableProps> = ({
         );
 
         if (playedCard) {
+          console.log(`[Table] Reconstructed 4th card:`, playedCard);
           const fullTrick = { ...prevTrick, [lastPlayerToPlay]: playedCard };
+          console.log("[Table] Setting visualTrick to reconstructed 4-card trick:", fullTrick);
           setVisualTrick(fullTrick);
         } else {
-          setVisualTrick(currTrick);
+            console.error("[Table] FAILED to reconstruct 4th card. Hands might be out of sync.");
+            setVisualTrick(currTrick);
         }
       }
     } else {
+      console.log("[Table] Normal state update. Syncing visualTrick with serverTrick.");
       setVisualTrick(currTrick);
     }
 
@@ -83,6 +93,7 @@ export const Table: React.FC<TableProps> = ({
     if (visualTrickCount === 4) {
       try {
         const winner = determineTrickWinner(visualTrick);
+        console.log(`[Table] Visual trick has 4 cards. Winner determined: ${winner}`);
         setLastWinner(winner);
       } catch (e) {
         // This can happen if the trick is invalid. Do nothing.
@@ -93,6 +104,7 @@ export const Table: React.FC<TableProps> = ({
   }, [visualTrick]);
 
   const handleFlyOutEnd = () => {
+    console.log("[Table] fly-out animation finished. Syncing visual trick back to server state.");
     setVisualTrick(currentState.trick);
     onEvaluateTrick();
   };

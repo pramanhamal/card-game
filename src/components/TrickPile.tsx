@@ -33,15 +33,19 @@ export const TrickPile: React.FC<TrickPileProps> = ({
   onFlyOutEnd,
   seatOf,
 }) => {
+  console.log("[TrickPile] Render. Cards in trick prop:", Object.values(trick).filter(Boolean).length, "Winner prop:", winner);
   const [isFlyingOut, setIsFlyingOut] = useState(false);
 
   useEffect(() => {
     if (winner) {
+      console.log(`[TrickPile] Winner prop is '${winner}'. Starting fly-out timers.`);
       const flyOutTimer = setTimeout(() => {
+        console.log("[TrickPile] Setting isFlyingOut to true.");
         setIsFlyingOut(true);
       }, 800);
 
       const cleanupTimer = setTimeout(() => {
+        console.log("[TrickPile] Calling onFlyOutEnd and resetting state.");
         onFlyOutEnd?.();
         setIsFlyingOut(false);
       }, 1400);

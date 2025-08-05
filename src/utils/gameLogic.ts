@@ -50,6 +50,7 @@ function dealHands(deck: Card[]): Record<PlayerId, Card[]> {
 }
 
 export function initializeGame(): GameState {
+  console.log("[gameLogic] Initializing new game state.");
   const deck = createDeck();
   const hands = dealHands(deck);
   const turn = SEAT_ORDER[Math.floor(Math.random() * SEAT_ORDER.length)];
@@ -82,6 +83,7 @@ export function legalMoves(state: GameState, player: PlayerId): Card[] {
 export function determineTrickWinner(
   trick: Record<PlayerId, Card | null>
 ): PlayerId {
+  console.log("[gameLogic] Determining trick winner for:", trick);
   const entries = Object.entries(trick) as [PlayerId, Card | null][];
   if (entries.some(([, c]) => c === null)) {
     throw new Error("Trick incomplete");
@@ -96,12 +98,15 @@ export function determineTrickWinner(
 
   let contenders: [PlayerId, Card][];
   if (trumpPlays.length > 0) {
+    console.log("[gameLogic] Trump was played. Contenders are trump plays.");
     contenders = trumpPlays;
   } else if (leadSuit) {
+    console.log(`[gameLogic] No trump. Lead suit is ${leadSuit}.`);
     contenders = entries
       .filter(([, c]) => c && c.suit === leadSuit)
       .map(([p, c]) => [p, c as Card]);
   } else {
+    console.warn("[gameLogic] No lead suit found, this shouldn't happen in a valid trick.");
     contenders = entries
       .filter(([, c]) => c !== null)
       .map(([p, c]) => [p, c as Card]);
@@ -114,7 +119,7 @@ export function determineTrickWinner(
       ? current
       : best;
   })[0];
-
+  console.log(`[gameLogic] Winner is: ${winner}`);
   return winner;
 }
 
@@ -123,25 +128,43 @@ export function playCard(
   player: PlayerId,
   card: Card
 ): void {
-  if (state.turn !== player) return;
+  console.log(`[gameLogic] playCard called by ${player} with card:`, card);
+  if (state.turn !== player) {
+    console.warn(`[gameLogic] IGNORED: It is ${state.turn}'s turn, not ${player}'s.`);
+    return;
+  }
   const hand = state.hands[player];
   const idx = hand.findIndex(
     (c) => c.suit === card.suit && c.rank === card.rank
   );
-  if (idx === -1) return;
+  if (idx === -1) {
+    console.error(`[gameLogic] IGNORED: Card not in hand for player ${player}.`);
+    return;
+  }
+  
+  console.log(`[gameLogic] Card found in hand. Removing it and adding to trick.`);
   hand.splice(idx, 1);
   state.trick[player] = card;
 
-  const full = Object.values(state.trick).every((c) => c !== null);
+  const trickCards = Object.values(state.trick);
+  const full = trickCards.every((c) => c !== null);
+
+  console.log(`[gameLogic] Trick now has ${trickCards.filter(Boolean).length} cards.`);
+
   if (full) {
+    console.log("[gameLogic] Trick is full. Determining winner and setting next turn.");
     const winner = determineTrickWinner(state.trick);
-    // The server state update will handle incrementing tricksWon and clearing the trick.
-    // We just set the turn for client-side prediction.
+    state.tricksWon[winner] = (state.tricksWon[winner] ?? 0) + 1;
+    // CRITICAL: This is the line that clears the trick. In a server environment,
+    // this change would be sent to clients. The client-side logic needs to handle this.
+    console.log("[gameLogic] Clearing trick and setting next turn to winner:", winner);
+    state.trick = { north: null, east: null, south: null, west: null };
     state.turn = winner;
   } else {
     const currentIdx = SEAT_ORDER.indexOf(player);
     const nextIdx = (currentIdx + 1) % SEAT_ORDER.length;
     state.turn = SEAT_ORDER[nextIdx];
+    console.log(`[gameLogic] Trick not full. Advancing turn to ${state.turn}.`);
   }
 }
 
