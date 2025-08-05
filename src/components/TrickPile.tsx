@@ -1,5 +1,5 @@
 // src/components/TrickPile.tsx
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { PlayerId, Card as CardType } from "../types/spades";
 import { Card } from "./Card";
@@ -39,33 +39,39 @@ export const TrickPile: React.FC<TrickPileProps> = ({
     if (winner) {
       const flyOutTimer = setTimeout(() => {
         setIsFlyingOut(true);
-      }, 1000); 
+      }, 800);
 
-      const clearTimer = setTimeout(() => {
+      const cleanupTimer = setTimeout(() => {
         onFlyOutEnd?.();
         setIsFlyingOut(false);
-      }, 1800);
+      }, 1400);
 
       return () => {
         clearTimeout(flyOutTimer);
-        clearTimeout(clearTimer);
+        clearTimeout(cleanupTimer);
       };
     }
   }, [winner, onFlyOutEnd]);
-  
-  const cards = (Object.entries(trick) as [PlayerId, CardType | null][])
+
+  const cardsToRender = (Object.entries(trick) as [PlayerId, CardType | null][])
     .filter(([, card]) => card !== null)
-    .map(([player, card]) => ({ player, card: card!, key: `${player}-${card!.suit}-${card!.rank}` }));
+    .map(([player, card]) => ({
+      player,
+      card: card!,
+      key: `${player}-${card!.suit}-${card!.rank}`,
+    }));
 
   return (
     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
       <AnimatePresence>
-        {cards.map(({ key, player, card }, idx) => {
+        {cardsToRender.map(({ key, player, card }, idx) => {
           const seat = seatOf[player];
+          if (!seat) return null;
+
           const startPos = seatOffsets[seat];
           const endPos = centerSlots[seat];
           
-          let animateState = {
+          let animateTarget = {
             x: endPos.x,
             y: endPos.y,
             rotate: endPos.rotate,
@@ -75,7 +81,7 @@ export const TrickPile: React.FC<TrickPileProps> = ({
           if (isFlyingOut && winner) {
             const winnerSeat = seatOf[winner];
             const winnerTarget = seatOffsets[winnerSeat];
-            animateState = {
+            animateTarget = {
               x: winnerTarget.x,
               y: winnerTarget.y,
               rotate: 0,
@@ -86,14 +92,9 @@ export const TrickPile: React.FC<TrickPileProps> = ({
           return (
             <motion.div
               key={key}
-              initial={{
-                x: startPos.x,
-                y: startPos.y,
-                rotate: startPos.rotate,
-                scale: 1,
-              }}
-              animate={animateState}
-              exit={{ scale: 0, opacity: 0 }}
+              initial={{ x: startPos.x, y: startPos.y, rotate: startPos.rotate, scale: 1 }}
+              animate={animateTarget}
+              exit={{ opacity: 0, scale: 0 }}
               transition={{
                 type: "spring",
                 stiffness: 300,

@@ -34,63 +34,75 @@ function sortByRank(cards: CardType[]) {
 const SEAT_CLOCKWISE: PlayerId[] = ["north", "east", "south", "west"];
 
 export const Table: React.FC<TableProps> = ({
-  state,
+  state: currentState,
   playCard,
   you,
   onEvaluateTrick,
   nameMap = defaultNameMap,
 }) => {
-  const { trick: serverTrick, round, turn, hands, tricksWon } = state;
+  const { trick: serverTrick, round, turn, hands, tricksWon } = currentState;
 
   const [visualTrick, setVisualTrick] = useState(serverTrick);
   const [lastWinner, setLastWinner] = useState<PlayerId | null>(null);
-  const prevStateRef = useRef<GameState>(state);
+  const prevStateRef = useRef<GameState>(currentState);
 
   useEffect(() => {
-    const prevTrick = prevStateRef.current.trick;
-    const prevTrickCount = Object.values(prevTrick).filter(Boolean).length;
-    const serverTrickCount = Object.values(serverTrick).filter(Boolean).length;
+    const prevState = prevStateRef.current;
+    const prevTrick = prevState.trick;
+    const currTrick = currentState.trick;
 
-    if (prevTrickCount === 3 && serverTrickCount === 4) {
-      setVisualTrick(serverTrick);
-    } else if (prevTrickCount === 4 && serverTrickCount === 0) {
-      // Don't update visual trick yet, let the animation finish.
+    const prevCount = Object.values(prevTrick).filter(Boolean).length;
+    const currCount = Object.values(currTrick).filter(Boolean).length;
+
+    if (prevCount === 3 && currCount === 0) {
+      const lastPlayerToPlay = prevState.turn;
+      if (lastPlayerToPlay) {
+        const prevHand = prevState.hands[lastPlayerToPlay] || [];
+        const currHand = currentState.hands[lastPlayerToPlay] || [];
+        
+        const playedCard = prevHand.find(
+          (c) => !currHand.some(sc => sc.rank === c.rank && sc.suit === c.suit)
+        );
+
+        if (playedCard) {
+          const fullTrick = { ...prevTrick, [lastPlayerToPlay]: playedCard };
+          setVisualTrick(fullTrick);
+        } else {
+          setVisualTrick(currTrick);
+        }
+      }
+    } else {
+      setVisualTrick(currTrick);
     }
-    else {
-      setVisualTrick(serverTrick)
-    }
 
-    prevStateRef.current = state;
-  }, [state, serverTrick]);
-
+    prevStateRef.current = currentState;
+  }, [currentState]);
 
   useEffect(() => {
-    const trickCards = Object.values(visualTrick).filter(Boolean);
-    if (trickCards.length === 4) {
+    const visualTrickCount = Object.values(visualTrick).filter(Boolean).length;
+    if (visualTrickCount === 4) {
       try {
         const winner = determineTrickWinner(visualTrick);
         setLastWinner(winner);
-      } catch (error) {
-        console.error("Could not determine trick winner:", error);
-        setLastWinner(null);
+      } catch (e) {
+        // This can happen if the trick is invalid. Do nothing.
       }
     } else {
       setLastWinner(null);
     }
   }, [visualTrick]);
 
-
   const handleFlyOutEnd = () => {
+    setVisualTrick(currentState.trick);
     onEvaluateTrick();
-    setLastWinner(null);
   };
 
   const youIdx = SEAT_CLOCKWISE.indexOf(you);
   const clockwiseFromYou = [
     ...SEAT_CLOCKWISE.slice(youIdx),
     ...SEAT_CLOCKWISE.slice(0, youIdx),
-  ]; 
-  
+  ];
+
   const uiMapping: {
     south: PlayerId;
     west: PlayerId;
@@ -124,11 +136,11 @@ export const Table: React.FC<TableProps> = ({
 
   const legalSet = new Set(
     isActive
-      ? legalMoves(state, you).map((c) => `${c.suit}-${c.rank}`)
+      ? legalMoves(currentState, you).map((c) => `${c.suit}-${c.rank}`)
       : []
   );
 
-  const yourHand = hands[you];
+  const yourHand = hands[you] || [];
   const firstCard = yourHand[0];
   const firstIsBlack = firstCard
     ? firstCard.suit === "spades" || firstCard.suit === "clubs"

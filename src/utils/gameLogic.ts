@@ -83,26 +83,36 @@ export function determineTrickWinner(
   trick: Record<PlayerId, Card | null>
 ): PlayerId {
   const entries = Object.entries(trick) as [PlayerId, Card | null][];
-  if (entries.some(([, c]) => c === null) || entries.length < 4) {
+  if (entries.some(([, c]) => c === null)) {
     throw new Error("Trick incomplete");
   }
 
-  const leadCard = entries.find(([, c]) => c !== null);
-  if (!leadCard) throw new Error("Trick is empty");
+  const leadSuit =
+    entries.find(([, c]) => c !== null)?.[1]?.suit || null;
 
-  const leadSuit = leadCard[1]!.suit;
-
-  const trumpPlays = entries.filter(([, c]) => c?.suit === "spades") as [PlayerId, Card][];
+  const trumpPlays: [PlayerId, Card][] = entries
+    .filter(([, c]) => c && c.suit === "spades")
+    .map(([p, c]) => [p, c as Card]);
 
   let contenders: [PlayerId, Card][];
   if (trumpPlays.length > 0) {
     contenders = trumpPlays;
+  } else if (leadSuit) {
+    contenders = entries
+      .filter(([, c]) => c && c.suit === leadSuit)
+      .map(([p, c]) => [p, c as Card]);
   } else {
-    contenders = entries.filter(([, c]) => c?.suit === leadSuit) as [PlayerId, Card][];
+    contenders = entries
+      .filter(([, c]) => c !== null)
+      .map(([p, c]) => [p, c as Card]);
   }
 
   const winner = contenders.reduce((best, current) => {
-    return rankValue(current[1].rank) > rankValue(best[1].rank) ? current : best;
+    const bestCard = best[1];
+    const currCard = current[1];
+    return rankValue(currCard.rank) > rankValue(bestCard.rank)
+      ? current
+      : best;
   })[0];
 
   return winner;
@@ -125,7 +135,8 @@ export function playCard(
   const full = Object.values(state.trick).every((c) => c !== null);
   if (full) {
     const winner = determineTrickWinner(state.trick);
-    state.tricksWon[winner] = (state.tricksWon[winner] ?? 0) + 1;
+    // The server state update will handle incrementing tricksWon and clearing the trick.
+    // We just set the turn for client-side prediction.
     state.turn = winner;
   } else {
     const currentIdx = SEAT_ORDER.indexOf(player);
