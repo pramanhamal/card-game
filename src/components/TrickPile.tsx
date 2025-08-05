@@ -84,7 +84,10 @@ export const TrickPile: React.FC<TrickPileProps> = ({
         {cards.map(({ player, card }, idx) => {
           const isOut = flyingOut && winner;
           const seat = seatOf[player];
-          const target = isOut ? seatOffsets[seat] : centerSlots[seat];
+          // Fly to winner's seat if flying out, otherwise to center
+          const target = isOut && winner
+            ? seatOffsets[seatOf[winner]]
+            : centerSlots[seat];
 
           return (
             <motion.div
