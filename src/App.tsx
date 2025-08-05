@@ -4,7 +4,7 @@ import { useGameState } from "./hooks/useGameState";
 import { Table } from "./components/Table";
 import { Scoreboard } from "./components/Scoreboard";
 import { BetPopup } from "./components/BetPopup";
-import { Dashboard } from "./components/Dashboard";
+import Dashboard from "./components/Dashboard";
 import { GameOverPopup } from "./components/GameOverPopup";
 import { NameInputPopup } from "./components/NameInputPopup";
 import { Lobby } from "./components/Lobby";
@@ -103,7 +103,6 @@ const App: React.FC = () => {
         applyServerState(payload.initialGameState);
 
         const seating = payload.seating || {};
-
         setSeatingNames({
           north: seating.north?.name || "North",
           east: seating.east?.name || "East",
@@ -171,6 +170,15 @@ const App: React.FC = () => {
     setBetPopupOpen(true);
   };
 
+  // **AVATAR URLS** — replace with your real paths
+  const avatars: Record<PlayerId, string> = {
+    north: "/images/harry.jpg",
+    east: "/images/raja.jpg",
+    south: "/images/you.jpg",
+    west: "/images/ruby.jpg",
+  };
+
+  // --- RENDER LOGIC ---
   if (!playerName) {
     return <NameInputPopup onNameSubmit={handleNameSubmit} />;
   }
@@ -198,9 +206,12 @@ const App: React.FC = () => {
   if (state && currentRoom && yourSeat && !isGameOver) {
     return (
       <div className="fixed inset-0 bg-teal-800 overflow-hidden">
+        {/* Your seat indicator */}
         <div className="absolute top-2 left-2 text-white px-2 py-1 bg-gray-800 rounded">
           You are: {yourSeat.toUpperCase()}
         </div>
+
+        {/* Seating names */}
         <div className="absolute top-2 right-2 bg-black bg-opacity-50 text-white px-3 py-2 rounded flex gap-2 text-sm">
           {(["north", "east", "south", "west"] as PlayerId[]).map((p) => (
             <div key={p}>
@@ -224,16 +235,22 @@ const App: React.FC = () => {
         />
 
         {betPopupOpen && <BetPopup onSelect={handlePlaceBid} />}
+
         {dashboardOpen && (
           <Dashboard
             history={gameHistory}
             onClose={() => setDashboardOpen(false)}
             playerNames={seatingNames}
+            avatars={avatars}
             yourSeat={yourSeat}
           />
         )}
+
         {isGameOver && (
-          <GameOverPopup totalScores={totalScores} onPlayAgain={handlePlayAgain} />
+          <GameOverPopup
+            totalScores={totalScores!}
+            onPlayAgain={handlePlayAgain}
+          />
         )}
 
         <div className="absolute top-4 right-4 z-20 flex items-center space-x-2">
@@ -294,7 +311,11 @@ const App: React.FC = () => {
   }
 
   return (
-    <Lobby rooms={rooms} onCreateRoom={handleCreateRoom} onJoinRoom={handleJoinRoom} />
+    <Lobby
+      rooms={rooms}
+      onCreateRoom={handleCreateRoom}
+      onJoinRoom={handleJoinRoom}
+    />
   );
 };
 
