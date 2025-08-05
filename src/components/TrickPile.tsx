@@ -27,84 +27,78 @@ const centerSlots: Record<'north' | 'east' | 'south' | 'west', Position> = {
   south: { x: 0, y: 50, rotate: 3 },
 };
 
-// Order in which plays are considered for stacking
-
 export const TrickPile: React.FC<TrickPileProps> = ({
   trick,
   winner,
   onFlyOutEnd,
   seatOf,
 }) => {
-  const playOrder = Object.keys(trick)
-    .filter((pid) => trick[pid as PlayerId] !== null) as PlayerId[];
-  const [cards, setCards] = useState<Array<{ player: PlayerId; card: CardType }>>([]);
-  const [flyingOut, setFlyingOut] = useState(false);
-  const prevTrickRef = useRef(trick);
+  const [isFlyingOut, setIsFlyingOut] = useState(false);
 
-  // 1) Detect newly played cards and append them in order
   useEffect(() => {
-    const newPlays: Array<{ player: PlayerId; card: CardType }> = [];
-    for (const p of Object.keys(trick) as PlayerId[]) {
-      if (!prevTrickRef.current[p] && trick[p]) {
-        newPlays.push({ player: p, card: trick[p]! });
-      }
-    }
-    if (newPlays.length) {
-      setCards((old) =>
-        [...old, ...newPlays].sort(
-          (a, b) => playOrder.indexOf(a.player) - playOrder.indexOf(b.player)
-        )
-      );
-      setFlyingOut(false);
-    }
-    prevTrickRef.current = trick;
-  }, [trick]);
+    if (winner) {
+      const flyOutTimer = setTimeout(() => {
+        setIsFlyingOut(true);
+      }, 800); 
 
-  // 2) When four cards present and winner known, trigger fly-out and reset
-  useEffect(() => {
-    if (cards.length === 4 && winner) {
-      // Wait before starting fly-out to let user see completed trick
-      const t1 = setTimeout(() => setFlyingOut(true), 2000);
-      // After brief fly-out, clear and notify
-      const t2 = setTimeout(() => {
-        setCards([]);
-        setFlyingOut(false);
-        if (onFlyOutEnd) onFlyOutEnd();
-      }, 3000);
+      const clearTimer = setTimeout(() => {
+        onFlyOutEnd?.();
+        setIsFlyingOut(false);
+      }, 1300);
+
       return () => {
-        clearTimeout(t1);
-        clearTimeout(t2);
+        clearTimeout(flyOutTimer);
+        clearTimeout(clearTimer);
       };
     }
-  }, [cards, winner, onFlyOutEnd]);
+  }, [winner, onFlyOutEnd]);
+  
+  const cards = (Object.entries(trick) as [PlayerId, CardType | null][])
+    .filter(([, card]) => card !== null)
+    .map(([player, card]) => ({ player, card: card!, key: `${player}-${card!.suit}-${card!.rank}` }));
 
   return (
-    <div style={{ position: "relative", width: "100%", height: "100%" }}>
+    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
       <AnimatePresence>
-        {cards.map(({ player, card }, idx) => {
-          const isOut = flyingOut && winner;
+        {cards.map(({ key, player, card }, idx) => {
           const seat = seatOf[player];
-          const target = isOut && winner
-            ? seatOffsets[seatOf[winner]]
-            : centerSlots[seat];
+          const startPos = seatOffsets[seat];
+          const endPos = centerSlots[seat];
+          
+          let animateState = {
+            x: endPos.x,
+            y: endPos.y,
+            rotate: endPos.rotate,
+            scale: 1,
+          };
+
+          if (isFlyingOut && winner) {
+            const winnerSeat = seatOf[winner];
+            const winnerTarget = seatOffsets[winnerSeat];
+            animateState = {
+              x: winnerTarget.x,
+              y: winnerTarget.y,
+              rotate: 0,
+              scale: 0.5,
+            };
+          }
 
           return (
             <motion.div
-              key={`${player}-${card.suit}-${card.rank}`}
-              initial={seatOffsets[seat]}
-              animate={{
-                x: target.x,
-                y: target.y,
-                rotate: target.rotate,
-                scale: isOut ? 0.6 : 1,
-                opacity: 1,
+              key={key}
+              initial={{
+                x: startPos.x,
+                y: startPos.y,
+                rotate: startPos.rotate,
+                scale: 1,
               }}
-              exit={{ opacity: 0 }}
+              animate={animateState}
+              exit={{ scale: 0, opacity: 0 }}
               transition={{
                 type: "spring",
                 stiffness: 300,
                 damping: 25,
-                delay: isOut ? 0 : idx * 0.1,
+                delay: isFlyingOut ? 0 : idx * 0.1,
               }}
               style={{ position: "absolute", zIndex: idx + 1 }}
             >

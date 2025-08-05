@@ -1,3 +1,4 @@
+// src/utils/gameLogic.ts
 import type { GameState, PlayerId, Card, Rank } from "../types/spades";
 
 export const SEAT_ORDER: PlayerId[] = ["north", "east", "south", "west"];
@@ -82,36 +83,26 @@ export function determineTrickWinner(
   trick: Record<PlayerId, Card | null>
 ): PlayerId {
   const entries = Object.entries(trick) as [PlayerId, Card | null][];
-  if (entries.some(([, c]) => c === null)) {
+  if (entries.some(([, c]) => c === null) || entries.length < 4) {
     throw new Error("Trick incomplete");
   }
 
-  const leadSuit =
-    entries.find(([, c]) => c !== null)?.[1]?.suit || null;
+  const leadCard = entries.find(([, c]) => c !== null);
+  if (!leadCard) throw new Error("Trick is empty");
 
-  const trumpPlays: [PlayerId, Card][] = entries
-    .filter(([, c]) => c && c.suit === "spades")
-    .map(([p, c]) => [p, c as Card]);
+  const leadSuit = leadCard[1]!.suit;
+
+  const trumpPlays = entries.filter(([, c]) => c?.suit === "spades") as [PlayerId, Card][];
 
   let contenders: [PlayerId, Card][];
   if (trumpPlays.length > 0) {
     contenders = trumpPlays;
-  } else if (leadSuit) {
-    contenders = entries
-      .filter(([, c]) => c && c.suit === leadSuit)
-      .map(([p, c]) => [p, c as Card]);
   } else {
-    contenders = entries
-      .filter(([, c]) => c !== null)
-      .map(([p, c]) => [p, c as Card]);
+    contenders = entries.filter(([, c]) => c?.suit === leadSuit) as [PlayerId, Card][];
   }
 
   const winner = contenders.reduce((best, current) => {
-    const bestCard = best[1];
-    const currCard = current[1];
-    return rankValue(currCard.rank) > rankValue(bestCard.rank)
-      ? current
-      : best;
+    return rankValue(current[1].rank) > rankValue(best[1].rank) ? current : best;
   })[0];
 
   return winner;
@@ -135,7 +126,6 @@ export function playCard(
   if (full) {
     const winner = determineTrickWinner(state.trick);
     state.tricksWon[winner] = (state.tricksWon[winner] ?? 0) + 1;
-    state.trick = { north: null, east: null, south: null, west: null };
     state.turn = winner;
   } else {
     const currentIdx = SEAT_ORDER.indexOf(player);

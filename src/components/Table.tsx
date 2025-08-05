@@ -21,7 +21,6 @@ const defaultNameMap: Record<PlayerId, string> = {
   south: "You",
 };
 
-// global rank ordering used for sorting
 const rankOrder: Array<number | "J" | "Q" | "K" | "A"> = [
   2, 3, 4, 5, 6, 7, 8, 9, 10, "J", "Q", "K", "A",
 ];
@@ -41,21 +40,57 @@ export const Table: React.FC<TableProps> = ({
   onEvaluateTrick,
   nameMap = defaultNameMap,
 }) => {
-  const { trick, round, turn, hands, tricksWon } = state;
+  const { trick: serverTrick, round, turn, hands, tricksWon } = state;
 
-  // ------------- perspective rotation -------------
-  // Build clockwise sequence starting from "you"
+  const [visualTrick, setVisualTrick] = useState(serverTrick);
+  const [lastWinner, setLastWinner] = useState<PlayerId | null>(null);
+  const prevStateRef = useRef<GameState>(state);
+
+  useEffect(() => {
+    const prevTrick = prevStateRef.current.trick;
+    const prevTrickCount = Object.values(prevTrick).filter(Boolean).length;
+    const serverTrickCount = Object.values(serverTrick).filter(Boolean).length;
+
+    if (prevTrickCount === 3 && serverTrickCount === 4) {
+      setVisualTrick(serverTrick);
+    } else if (prevTrickCount === 4 && serverTrickCount === 0) {
+      // Don't update visual trick yet, let the animation finish.
+    }
+    else {
+      setVisualTrick(serverTrick)
+    }
+
+    prevStateRef.current = state;
+  }, [state, serverTrick]);
+
+
+  useEffect(() => {
+    const trickCards = Object.values(visualTrick).filter(Boolean);
+    if (trickCards.length === 4) {
+      try {
+        const winner = determineTrickWinner(visualTrick);
+        setLastWinner(winner);
+      } catch (error) {
+        console.error("Could not determine trick winner:", error);
+        setLastWinner(null);
+      }
+    } else {
+      setLastWinner(null);
+    }
+  }, [visualTrick]);
+
+
+  const handleFlyOutEnd = () => {
+    onEvaluateTrick();
+    setLastWinner(null);
+  };
+
   const youIdx = SEAT_CLOCKWISE.indexOf(you);
   const clockwiseFromYou = [
     ...SEAT_CLOCKWISE.slice(youIdx),
     ...SEAT_CLOCKWISE.slice(0, youIdx),
-  ]; // e.g., [you, next clockwise, ..., ...]
-
-  // Map display positions so that:
-  // south (bottom) = you
-  // west (left) = next clockwise after you
-  // north (top) = next after that
-  // east (right) = last
+  ]; 
+  
   const uiMapping: {
     south: PlayerId;
     west: PlayerId;
@@ -73,11 +108,9 @@ export const Table: React.FC<TableProps> = ({
     seatOf[pid] = seat as 'north' | 'east' | 'south' | 'west';
   });
 
-  // Determine if it's this client's active turn
-  const trickIsFull = Object.values(trick).every((c) => c !== null);
+  const trickIsFull = Object.values(visualTrick).every((c) => c !== null);
   const isMyTurn = turn === you && !trickIsFull;
 
-  // Active UI delay
   const [isActive, setIsActive] = useState(false);
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout>;
@@ -89,33 +122,12 @@ export const Table: React.FC<TableProps> = ({
     return () => clearTimeout(timer);
   }, [isMyTurn]);
 
-  // Legal move set for you
   const legalSet = new Set(
     isActive
       ? legalMoves(state, you).map((c) => `${c.suit}-${c.rank}`)
       : []
   );
 
-  // Track last trick winner
-  const [lastWinner, setLastWinner] = useState<PlayerId | null>(null);
-  const prevTrickRef = useRef(trick);
-  useEffect(() => {
-    const prevCount = Object.values(prevTrickRef.current).filter(
-      (c) => c !== null
-    ).length;
-    const currCount = Object.values(trick).filter((c) => c !== null).length;
-
-    if (prevCount < 4 && currCount === 4) {
-      setLastWinner(determineTrickWinner(trick));
-    }
-    if (currCount === 0) {
-      setLastWinner(null);
-    }
-
-    prevTrickRef.current = trick;
-  }, [trick]);
-
-  // Build your sorted hand with alternating color grouping like before
   const yourHand = hands[you];
   const firstCard = yourHand[0];
   const firstIsBlack = firstCard
@@ -146,17 +158,16 @@ export const Table: React.FC<TableProps> = ({
   return (
     <div className="relative w-full h-full bg-teal-800">
       <TrickPile
-        trick={state.trick}
+        trick={visualTrick}
         winner={lastWinner}
         seatOf={seatOf}
-        onFlyOutEnd={onEvaluateTrick}
+        onFlyOutEnd={handleFlyOutEnd}
       />
 
       <div className="absolute top-4 left-4 bg-black bg-opacity-50 text-white px-3 py-1 rounded">
         Round: {round} | Turn: {turn === you ? "You" : nameMap[turn]}
       </div>
 
-      {/* Opponents placed according to rotated perspective */}
       <Opponent
         position="north"
         name={nameMap[uiMapping.north]}
@@ -176,7 +187,6 @@ export const Table: React.FC<TableProps> = ({
         tricks={tricksWon[uiMapping.east]}
       />
 
-      {/* Your hand at bottom */}
       <div
         className="absolute inset-x-0 bottom-0 h-48 flex justify-center pointer-events-auto transition-all duration-300"
         style={{
