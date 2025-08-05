@@ -28,7 +28,6 @@ const centerSlots: Record<'north' | 'east' | 'south' | 'west', Position> = {
 };
 
 // Order in which plays are considered for stacking
-const playOrder: PlayerId[] = ["north", "east", "west", "south"];
 
 export const TrickPile: React.FC<TrickPileProps> = ({
   trick,
@@ -36,6 +35,8 @@ export const TrickPile: React.FC<TrickPileProps> = ({
   onFlyOutEnd,
   seatOf,
 }) => {
+  const playOrder = Object.keys(trick)
+    .filter((pid) => trick[pid as PlayerId] !== null) as PlayerId[];
   const [cards, setCards] = useState<Array<{ player: PlayerId; card: CardType }>>([]);
   const [flyingOut, setFlyingOut] = useState(false);
   const prevTrickRef = useRef(trick);
@@ -43,7 +44,7 @@ export const TrickPile: React.FC<TrickPileProps> = ({
   // 1) Detect newly played cards and append them in order
   useEffect(() => {
     const newPlays: Array<{ player: PlayerId; card: CardType }> = [];
-    for (const p of playOrder) {
+    for (const p of Object.keys(trick) as PlayerId[]) {
       if (!prevTrickRef.current[p] && trick[p]) {
         newPlays.push({ player: p, card: trick[p]! });
       }
@@ -51,8 +52,7 @@ export const TrickPile: React.FC<TrickPileProps> = ({
     if (newPlays.length) {
       setCards((old) =>
         [...old, ...newPlays].sort(
-          (a, b) =>
-            playOrder.indexOf(a.player) - playOrder.indexOf(b.player)
+          (a, b) => playOrder.indexOf(a.player) - playOrder.indexOf(b.player)
         )
       );
       setFlyingOut(false);
@@ -70,7 +70,7 @@ export const TrickPile: React.FC<TrickPileProps> = ({
         setCards([]);
         setFlyingOut(false);
         if (onFlyOutEnd) onFlyOutEnd();
-      }, 2200);
+      }, 3000);
       return () => {
         clearTimeout(t1);
         clearTimeout(t2);
@@ -79,12 +79,11 @@ export const TrickPile: React.FC<TrickPileProps> = ({
   }, [cards, winner, onFlyOutEnd]);
 
   return (
-    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+    <div style={{ position: "relative", width: "100%", height: "100%" }}>
       <AnimatePresence>
         {cards.map(({ player, card }, idx) => {
           const isOut = flyingOut && winner;
           const seat = seatOf[player];
-          // Fly to winner's seat if flying out, otherwise to center
           const target = isOut && winner
             ? seatOffsets[seatOf[winner]]
             : centerSlots[seat];
