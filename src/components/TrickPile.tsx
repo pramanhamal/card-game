@@ -39,12 +39,12 @@ export const TrickPile: React.FC<TrickPileProps> = ({
     if (winner) {
       const flyOutTimer = setTimeout(() => {
         setIsFlyingOut(true);
-      }, 800); 
+      }, 1000); 
 
       const clearTimer = setTimeout(() => {
         onFlyOutEnd?.();
         setIsFlyingOut(false);
-      }, 1300);
+      }, 1800);
 
       return () => {
         clearTimeout(flyOutTimer);
