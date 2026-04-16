@@ -183,9 +183,24 @@ const App: React.FC = () => {
 
   if (showGameStartPopup) {
     return (
-      <div className="fixed inset-0 bg-teal-800 flex items-center justify-center">
-        <div className="bg-white p-8 rounded-lg shadow-xl text-2xl font-bold animate-pulse">
-          All players are in! Starting the game...
+      <div
+        className="fixed inset-0 flex items-center justify-center"
+        style={{
+          background:
+            "radial-gradient(ellipse at 50% 45%, #1e7a42 0%, #0d4222 60%, #050f08 100%)",
+        }}
+      >
+        <div
+          className="text-center px-10 py-8 rounded-2xl"
+          style={{
+            background: "rgba(0,0,0,0.55)",
+            border: "1px solid rgba(255,255,255,0.12)",
+            backdropFilter: "blur(10px)",
+          }}
+        >
+          <div className="text-5xl mb-4 animate-bounce">♠</div>
+          <div className="text-2xl font-bold text-white">All players are in!</div>
+          <div className="text-sm text-gray-400 mt-2">Starting the game…</div>
         </div>
       </div>
     );

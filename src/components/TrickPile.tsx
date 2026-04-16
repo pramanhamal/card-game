@@ -7,24 +7,26 @@ import { Card } from "./Card";
 interface TrickPileProps {
   trick: Record<PlayerId, CardType | null>;
   winner: PlayerId | null;
-  seatOf: Record<PlayerId, 'north' | 'east' | 'south' | 'west'>;
+  seatOf: Record<PlayerId, "north" | "east" | "south" | "west">;
   onFlyOutEnd?: () => void;
 }
 
 type Position = { x: number; y: number; rotate: number };
 
-const seatOffsets: Record<'north' | 'east' | 'south' | 'west', Position> = {
-  north: { x: 0, y: -200, rotate: 0 },
-  east: { x: 300, y: 0, rotate: 0 },
-  west: { x: -300, y: 0, rotate: 0 },
-  south: { x: 0, y: 200, rotate: 0 },
+// Spawn positions — cards animate FROM here to center
+const seatOffsets: Record<"north" | "east" | "south" | "west", Position> = {
+  north: { x: 0, y: -220, rotate: 0 },
+  east:  { x: 340, y: 0, rotate: 0 },
+  west:  { x: -340, y: 0, rotate: 0 },
+  south: { x: 0, y: 220, rotate: 0 },
 };
 
-const centerSlots: Record<'north' | 'east' | 'south' | 'west', Position> = {
-  north: { x: 0, y: -50, rotate: -5 },
-  east: { x: 50, y: 0, rotate: 10 },
-  west: { x: -50, y: 0, rotate: -8 },
-  south: { x: 0, y: 50, rotate: 3 },
+// Where cards rest in the center of the table
+const centerSlots: Record<"north" | "east" | "south" | "west", Position> = {
+  north: { x: 0, y: -56, rotate: -6 },
+  east:  { x: 56, y: 0,  rotate: 12 },
+  west:  { x: -56, y: 0, rotate: -9 },
+  south: { x: 0, y: 56,  rotate: 4 },
 };
 
 export const TrickPile: React.FC<TrickPileProps> = ({
@@ -33,23 +35,15 @@ export const TrickPile: React.FC<TrickPileProps> = ({
   onFlyOutEnd,
   seatOf,
 }) => {
-  console.log("[TrickPile] Render. Cards in trick prop:", Object.values(trick).filter(Boolean).length, "Winner prop:", winner);
   const [isFlyingOut, setIsFlyingOut] = useState(false);
 
   useEffect(() => {
     if (winner) {
-      console.log(`[TrickPile] Winner prop is '${winner}'. Starting fly-out timers.`);
-      const flyOutTimer = setTimeout(() => {
-        console.log("[TrickPile] Setting isFlyingOut to true.");
-        setIsFlyingOut(true);
-      }, 800);
-
+      const flyOutTimer = setTimeout(() => setIsFlyingOut(true), 820);
       const cleanupTimer = setTimeout(() => {
-        console.log("[TrickPile] Calling onFlyOutEnd and resetting state.");
         onFlyOutEnd?.();
         setIsFlyingOut(false);
-      }, 1400);
-
+      }, 1480);
       return () => {
         clearTimeout(flyOutTimer);
         clearTimeout(cleanupTimer);
@@ -57,7 +51,9 @@ export const TrickPile: React.FC<TrickPileProps> = ({
     }
   }, [winner, onFlyOutEnd]);
 
-  const cardsToRender = (Object.entries(trick) as [PlayerId, CardType | null][])
+  const cardsToRender = (
+    Object.entries(trick) as [PlayerId, CardType | null][]
+  )
     .filter(([, card]) => card !== null)
     .map(([player, card]) => ({
       player,
@@ -65,8 +61,30 @@ export const TrickPile: React.FC<TrickPileProps> = ({
       key: `${player}-${card!.suit}-${card!.rank}`,
     }));
 
+  const trickIsFull = cardsToRender.length === 4;
+
   return (
     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+      {/* Subtle glow on the table center when all cards are in */}
+      <AnimatePresence>
+        {trickIsFull && !isFlyingOut && (
+          <motion.div
+            key="glow"
+            initial={{ opacity: 0, scale: 0.6 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.8 }}
+            transition={{ duration: 0.3 }}
+            className="absolute rounded-full"
+            style={{
+              width: 200,
+              height: 140,
+              background:
+                "radial-gradient(ellipse, rgba(255,220,80,0.18) 0%, transparent 70%)",
+            }}
+          />
+        )}
+      </AnimatePresence>
+
       <AnimatePresence>
         {cardsToRender.map(({ key, player, card }, idx) => {
           const seat = seatOf[player];
@@ -74,13 +92,8 @@ export const TrickPile: React.FC<TrickPileProps> = ({
 
           const startPos = seatOffsets[seat];
           const endPos = centerSlots[seat];
-          
-          let animateTarget = {
-            x: endPos.x,
-            y: endPos.y,
-            rotate: endPos.rotate,
-            scale: 1,
-          };
+
+          let animateTarget: Position & { scale: number; opacity: number };
 
           if (isFlyingOut && winner) {
             const winnerSeat = seatOf[winner];
@@ -89,25 +102,57 @@ export const TrickPile: React.FC<TrickPileProps> = ({
               x: winnerTarget.x,
               y: winnerTarget.y,
               rotate: 0,
-              scale: 0.5,
+              scale: 0.4,
+              opacity: 0,
+            };
+          } else {
+            animateTarget = {
+              x: endPos.x,
+              y: endPos.y,
+              rotate: endPos.rotate,
+              scale: 1,
+              opacity: 1,
             };
           }
 
           return (
             <motion.div
               key={key}
-              initial={{ x: startPos.x, y: startPos.y, rotate: startPos.rotate, scale: 1 }}
-              animate={animateTarget}
-              exit={{ opacity: 0, scale: 0 }}
-              transition={{
-                type: "spring",
-                stiffness: 300,
-                damping: 25,
-                delay: isFlyingOut ? 0 : idx * 0.1,
+              initial={{
+                x: startPos.x,
+                y: startPos.y,
+                rotate: startPos.rotate,
+                scale: 0.85,
+                opacity: 0,
               }}
+              animate={animateTarget}
+              exit={{ opacity: 0, scale: 0.2, transition: { duration: 0.2 } }}
+              transition={
+                isFlyingOut
+                  ? { type: "tween", duration: 0.38, ease: "easeIn" }
+                  : {
+                      type: "spring",
+                      stiffness: 420,
+                      damping: 32,
+                      delay: idx * 0.06,
+                    }
+              }
               style={{ position: "absolute", zIndex: idx + 1 }}
             >
-              <Card card={card} faceUp />
+              {/* Card glow ring for the winning seat */}
+              <div
+                className="relative"
+                style={
+                  winner && seatOf[winner] === seat && trickIsFull
+                    ? {
+                        filter:
+                          "drop-shadow(0 0 10px rgba(255,215,0,0.9)) drop-shadow(0 0 4px rgba(255,215,0,0.6))",
+                      }
+                    : {}
+                }
+              >
+                <Card card={card} faceUp />
+              </div>
             </motion.div>
           );
         })}

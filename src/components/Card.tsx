@@ -40,9 +40,10 @@ export const Card: React.FC<CardProps> = ({
   return (
     <div
       onClick={onClick}
-      className={`card relative rounded overflow-hidden w-16 h-24 flex items-center justify-center bg-white shadow ${className} ${
+      className={`card relative rounded-lg overflow-hidden w-16 h-24 flex items-center justify-center bg-white ${className} ${
         onClick ? "cursor-pointer" : "cursor-default"
       }`}
+      style={{ boxShadow: "0 2px 8px rgba(0,0,0,0.4), 0 0 0 1px rgba(0,0,0,0.08)" }}
       {...rest}
     >
       {faceUp ? (

@@ -1,5 +1,6 @@
 // src/components/Table.tsx
 import React, { useState, useEffect, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import type { GameState, PlayerId, Card as CardType } from "../types/spades";
 import { Opponent } from "./Opponent";
 import { Card } from "./Card";
@@ -47,7 +48,6 @@ export const Table: React.FC<TableProps> = ({
   const prevStateRef = useRef<GameState>(currentState);
 
   useEffect(() => {
-    console.log("--- Table.tsx state updated ---");
     const prevState = prevStateRef.current;
     const prevTrick = prevState.trick;
     const currTrick = currentState.trick;
@@ -55,33 +55,23 @@ export const Table: React.FC<TableProps> = ({
     const prevCount = Object.values(prevTrick).filter(Boolean).length;
     const currCount = Object.values(currTrick).filter(Boolean).length;
 
-    console.log(`[Table] Trick count changed: ${prevCount} -> ${currCount}`);
-
     if (prevCount === 3 && currCount === 0) {
-      console.log("[Table] CRITICAL: Detected 3 -> 0 trick. Reconstructing 4th card.");
       const lastPlayerToPlay = prevState.turn;
-      console.log(`[Table] Last player was: ${lastPlayerToPlay}`);
-      
       if (lastPlayerToPlay) {
         const prevHand = prevState.hands[lastPlayerToPlay] || [];
         const currHand = currentState.hands[lastPlayerToPlay] || [];
-        
         const playedCard = prevHand.find(
-          (c) => !currHand.some(sc => sc.rank === c.rank && sc.suit === c.suit)
+          (c) =>
+            !currHand.some((sc) => sc.rank === c.rank && sc.suit === c.suit)
         );
-
         if (playedCard) {
-          console.log(`[Table] Reconstructed 4th card:`, playedCard);
           const fullTrick = { ...prevTrick, [lastPlayerToPlay]: playedCard };
-          console.log("[Table] Setting visualTrick to reconstructed 4-card trick:", fullTrick);
           setVisualTrick(fullTrick);
         } else {
-            console.error("[Table] FAILED to reconstruct 4th card. Hands might be out of sync.");
-            setVisualTrick(currTrick);
+          setVisualTrick(currTrick);
         }
       }
     } else {
-      console.log("[Table] Normal state update. Syncing visualTrick with serverTrick.");
       setVisualTrick(currTrick);
     }
 
@@ -93,10 +83,9 @@ export const Table: React.FC<TableProps> = ({
     if (visualTrickCount === 4) {
       try {
         const winner = determineTrickWinner(visualTrick);
-        console.log(`[Table] Visual trick has 4 cards. Winner determined: ${winner}`);
         setLastWinner(winner);
-      } catch (e) {
-        // This can happen if the trick is invalid. Do nothing.
+      } catch {
+        // ignore invalid trick
       }
     } else {
       setLastWinner(null);
@@ -104,7 +93,6 @@ export const Table: React.FC<TableProps> = ({
   }, [visualTrick]);
 
   const handleFlyOutEnd = () => {
-    console.log("[Table] fly-out animation finished. Syncing visual trick back to server state.");
     setVisualTrick(currentState.trick);
     onEvaluateTrick();
   };
@@ -127,9 +115,10 @@ export const Table: React.FC<TableProps> = ({
     east: clockwiseFromYou[3],
   };
 
-  const seatOf: Record<PlayerId, 'north' | 'east' | 'south' | 'west'> = {} as any;
+  const seatOf: Record<PlayerId, "north" | "east" | "south" | "west"> =
+    {} as any;
   Object.entries(uiMapping).forEach(([seat, pid]) => {
-    seatOf[pid] = seat as 'north' | 'east' | 'south' | 'west';
+    seatOf[pid] = seat as "north" | "east" | "south" | "west";
   });
 
   const trickIsFull = Object.values(visualTrick).every((c) => c !== null);
@@ -139,7 +128,7 @@ export const Table: React.FC<TableProps> = ({
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout>;
     if (isMyTurn) {
-      timer = setTimeout(() => setIsActive(true), 500);
+      timer = setTimeout(() => setIsActive(true), 400);
     } else {
       setIsActive(false);
     }
@@ -165,7 +154,9 @@ export const Table: React.FC<TableProps> = ({
   const blackSuits = suitsInHand
     .filter((s) => s === "spades" || s === "clubs")
     .sort();
-  const groupLists = firstIsBlack ? [blackSuits, redSuits] : [redSuits, blackSuits];
+  const groupLists = firstIsBlack
+    ? [blackSuits, redSuits]
+    : [redSuits, blackSuits];
   const indices: [number, number] = [0, 0];
   const suitOrder: string[] = [];
   let g = 0;
@@ -180,7 +171,34 @@ export const Table: React.FC<TableProps> = ({
   );
 
   return (
-    <div className="relative w-full h-full bg-teal-800">
+    <div
+      className="relative w-full h-full"
+      style={{
+        background:
+          "radial-gradient(ellipse at 50% 45%, #1e7a42 0%, #145c31 45%, #0d4222 100%)",
+      }}
+    >
+      {/* Subtle felt pattern overlay */}
+      <div
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          backgroundImage: `url("data:image/svg+xml,%3Csvg width='40' height='40' viewBox='0 0 40 40' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23000' fill-opacity='0.04'%3E%3Cpath d='M20 20c0-5.5-4.5-10-10-10S0 14.5 0 20s4.5 10 10 10 10-4.5 10-10zm10 0c0 5.5 4.5 10 10 10s10-4.5 10-10-4.5-10-10-10-10 4.5-10 10z'/%3E%3C/g%3E%3C/svg%3E")`,
+          opacity: 0.5,
+        }}
+      />
+
+      {/* Table oval border */}
+      <div
+        className="absolute pointer-events-none"
+        style={{
+          inset: "12px",
+          borderRadius: "50% / 40%",
+          border: "2px solid rgba(255,255,255,0.07)",
+          boxShadow:
+            "inset 0 0 60px rgba(0,0,0,0.25), 0 0 0 4px rgba(0,0,0,0.3)",
+        }}
+      />
+
       <TrickPile
         trick={visualTrick}
         winner={lastWinner}
@@ -188,70 +206,127 @@ export const Table: React.FC<TableProps> = ({
         onFlyOutEnd={handleFlyOutEnd}
       />
 
-      <div className="absolute top-4 left-4 bg-black bg-opacity-50 text-white px-3 py-1 rounded">
-        Round: {round} | Turn: {turn === you ? "You" : nameMap[turn]}
+      {/* Round / Turn indicator */}
+      <div className="absolute top-3 left-3 z-10">
+        <div
+          className="flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium text-white"
+          style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(6px)" }}
+        >
+          <span className="text-gray-400 text-xs">Round</span>
+          <span className="font-bold">{round}</span>
+          <span className="text-gray-500">·</span>
+          <span className={turn === you ? "text-yellow-300 font-bold" : "text-gray-200"}>
+            {turn === you ? "Your turn" : `${nameMap[turn]}'s turn`}
+          </span>
+        </div>
       </div>
 
+      {/* Opponents */}
       <Opponent
         position="north"
         name={nameMap[uiMapping.north]}
         cardsCount={hands[uiMapping.north].length}
         tricks={tricksWon[uiMapping.north]}
+        isCurrentTurn={turn === uiMapping.north}
       />
       <Opponent
         position="west"
         name={nameMap[uiMapping.west]}
         cardsCount={hands[uiMapping.west].length}
         tricks={tricksWon[uiMapping.west]}
+        isCurrentTurn={turn === uiMapping.west}
       />
       <Opponent
         position="east"
         name={nameMap[uiMapping.east]}
         cardsCount={hands[uiMapping.east].length}
         tricks={tricksWon[uiMapping.east]}
+        isCurrentTurn={turn === uiMapping.east}
       />
 
+      {/* Your hand — bottom */}
       <div
-        className="absolute inset-x-0 bottom-0 h-48 flex justify-center pointer-events-auto transition-all duration-300"
+        className="absolute inset-x-0 bottom-0 h-52 flex justify-center pointer-events-auto"
         style={{
           filter: isActive
-            ? "drop-shadow(0 0 20px rgba(255, 255, 100, 0.4))"
+            ? "drop-shadow(0 0 22px rgba(255,230,80,0.45))"
             : "none",
+          transition: "filter 0.4s ease",
         }}
       >
-        {sortedHand.map((c, i) => {
-          const total = sortedHand.length;
-          const spread = 70;
-          const angle =
-            total > 1 ? -spread / 2 + (spread / (total - 1)) * i : 0;
+        {/* Your name / turn badge */}
+        <div
+          className="absolute bottom-1 left-1/2 -translate-x-1/2 text-xs font-semibold px-3 py-0.5 rounded-full z-20"
+          style={{
+            background: isActive
+              ? "rgba(255,210,0,0.85)"
+              : "rgba(0,0,0,0.5)",
+            color: isActive ? "#1a1a00" : "#ccc",
+            backdropFilter: "blur(4px)",
+            transition: "background 0.3s, color 0.3s",
+          }}
+        >
+          {nameMap[you]}{isActive ? " — Your Turn" : ""}
+        </div>
 
-          const key = `${c.suit}-${c.rank}`;
-          const canPlay = isActive && legalSet.has(key);
-          const scale = canPlay ? 1.15 : 1;
-          const translateY = canPlay ? -100 : -80;
+        <AnimatePresence>
+          {sortedHand.map((c, i) => {
+            const total = sortedHand.length;
+            const spread = Math.min(72, total * 5.5);
+            const angle =
+              total > 1 ? -spread / 2 + (spread / (total - 1)) * i : 0;
+            const key = `${c.suit}-${c.rank}`;
+            const canPlay = isActive && legalSet.has(key);
+            const translateY = canPlay ? -108 : -84;
 
-          return (
-            <div
-              key={key}
-              className="absolute transition-transform duration-300 ease-in-out"
-              style={{
-                transform: `rotate(${angle}deg) translateY(${translateY}px) scale(${scale})`,
-                transformOrigin: "50% 100%",
-              }}
-            >
-              <div
-                onClick={canPlay ? () => playCard(you, c) : undefined}
-                className={`inline-block rounded-md ${
-                  canPlay
-                    ? "cursor-pointer"
-                    : "pointer-events-none cursor-not-allowed"
-                }`}
+            return (
+              <motion.div
+                key={key}
+                className="absolute"
+                initial={{ y: 80, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                exit={{ y: -60, opacity: 0, transition: { duration: 0.18, ease: "easeIn" } }}
+                transition={{
+                  type: "spring",
+                  stiffness: 380,
+                  damping: 30,
+                  delay: i * 0.025,
+                }}
               >
-                <Card card={c} faceUp />
-              </div>
-            </div>
-          );
-        })}
+                <div
+                  className="transition-all duration-250 ease-out"
+                  style={{
+                    transform: `rotate(${angle}deg) translateY(${translateY}px)`,
+                    transformOrigin: "50% 100%",
+                  }}
+                  onClick={canPlay ? () => playCard(you, c) : undefined}
+                >
+                  <div
+                    className={`rounded-lg overflow-hidden transition-all duration-200 ${
+                      canPlay
+                        ? "cursor-pointer ring-2 ring-yellow-300 ring-offset-1 ring-offset-transparent"
+                        : canPlay === false && isActive
+                        ? "opacity-55 cursor-not-allowed"
+                        : ""
+                    }`}
+                    style={
+                      canPlay
+                        ? {
+                            boxShadow:
+                              "0 6px 20px rgba(0,0,0,0.5), 0 0 8px rgba(255,220,60,0.4)",
+                          }
+                        : {
+                            boxShadow: "0 3px 10px rgba(0,0,0,0.35)",
+                          }
+                    }
+                  >
+                    <Card card={c} faceUp />
+                  </div>
+                </div>
+              </motion.div>
+            );
+          })}
+        </AnimatePresence>
       </div>
     </div>
   );
