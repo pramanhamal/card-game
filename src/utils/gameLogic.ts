@@ -63,6 +63,7 @@ export function initializeGame(): GameState {
     turn,
     round: 1,
     bids: { north: 0, east: 0, south: 0, west: 0 },
+    spadesBroken: false,
   };
 }
 
@@ -71,7 +72,15 @@ export function legalMoves(state: GameState, player: PlayerId): Card[] {
   const leadSuit =
     Object.entries(state.trick).find(([, c]) => c !== null)?.[1]?.suit || null;
 
-  if (!leadSuit) return [...hand];
+  if (!leadSuit) {
+    // Player is leading the trick
+    if (!state.spadesBroken) {
+      const nonSpades = hand.filter((c) => c.suit !== "spades");
+      // Can only lead spades if that's all they have
+      return nonSpades.length > 0 ? nonSpades : [...hand];
+    }
+    return [...hand];
+  }
 
   const hasLead = hand.some((c) => c.suit === leadSuit);
   if (hasLead) {
@@ -145,6 +154,7 @@ export function playCard(
   console.log(`[gameLogic] Card found in hand. Removing it and adding to trick.`);
   hand.splice(idx, 1);
   state.trick[player] = card;
+  if (card.suit === "spades") state.spadesBroken = true;
 
   const trickCards = Object.values(state.trick);
   const full = trickCards.every((c) => c !== null);
@@ -181,7 +191,7 @@ export function calculateScores(
   for (const pid of SEAT_ORDER) {
     const bid = bids[pid];
     const won = tricksWon[pid];
-    result[pid] = won < bid ? -bid : bid + (won - bid);
+    result[pid] = won < bid ? -(10 * bid) : (10 * bid) + (won - bid);
   }
   return result;
 }

@@ -145,7 +145,6 @@ const App: React.FC = () => {
     placeBid(yourSeat, bid);
     socket?.emit("place_bid", {
       roomId: currentRoom.id,
-      playerId: yourSeat,
       bid,
     });
     setBetPopupOpen(false);
@@ -155,7 +154,6 @@ const App: React.FC = () => {
     if (!currentRoom || !yourSeat) return;
     socket?.emit("play_card", {
       roomId: currentRoom.id,
-      playerId: yourSeat,
       card,
     });
   };
