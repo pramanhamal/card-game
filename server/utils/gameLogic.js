@@ -61,6 +61,7 @@ function initializeGame() {
     turn,
     round: 1,
     bids: { north: 0, east: 0, south: 0, west: 0 },
+    spadesBroken: false,
   };
 }
 
@@ -106,6 +107,7 @@ function playCard(state, player, card) {
   if (index === -1) return;
   hand.splice(index, 1);
   state.trick[player] = card;
+  if (card.suit === "spades") state.spadesBroken = true;
 
   const trickFilled = Object.values(state.trick).every((c) => c !== null);
   if (trickFilled) {
@@ -122,7 +124,7 @@ function calculateScores(bids, tricksWon) {
   for (const p of SEAT_ORDER) {
     const bid = bids[p];
     const won = tricksWon[p];
-    result[p] = won < bid ? -bid : bid + (won - bid);
+    result[p] = won < bid ? -(10 * bid) : (10 * bid) + (won - bid);
   }
   return result;
 }
@@ -134,6 +136,11 @@ function legalMoves(state, player) {
   const leadSuit = leadEntry && leadEntry[1] ? leadEntry[1].suit : null;
 
   if (!leadSuit) {
+    // Player is leading the trick
+    if (!state.spadesBroken) {
+      const nonSpades = hand.filter((c) => c.suit !== "spades");
+      return nonSpades.length > 0 ? nonSpades : [...hand];
+    }
     return [...hand];
   }
   const hasLead = hand.some((c) => c.suit === leadSuit);

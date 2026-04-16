@@ -6,6 +6,7 @@ import { customAlphabet } from "nanoid";
 import {
   initializeGame,
   playCard,
+  legalMoves,
 } from "./utils/gameLogic.js";
 
 const app = express();
@@ -148,18 +149,26 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("place_bid", ({ roomId, playerId, bid }) => {
+  socket.on("place_bid", ({ roomId, bid }) => {
     const room = rooms.get(roomId);
     if (!room || !room.gameState) return;
-    room.gameState.bids[playerId] = bid;
+    const player = room.players.get(socket.id);
+    if (!player || !player.seat) return;
+    room.gameState.bids[player.seat] = bid;
     io.to(roomId).emit("game_state_update", room.gameState);
   });
 
-  socket.on("play_card", ({ roomId, playerId, card }) => {
+  socket.on("play_card", ({ roomId, card }) => {
     const room = rooms.get(roomId);
     if (!room || !room.gameState) return;
+    const player = room.players.get(socket.id);
+    if (!player || !player.seat) return;
 
-    playCard(room.gameState, playerId, card);
+    const allowed = legalMoves(room.gameState, player.seat);
+    const isLegal = allowed.some((c) => c.suit === card.suit && c.rank === card.rank);
+    if (!isLegal) return;
+
+    playCard(room.gameState, player.seat, card);
     io.to(roomId).emit("game_state_update", room.gameState);
   });
 

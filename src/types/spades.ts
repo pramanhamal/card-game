@@ -17,6 +17,7 @@ export interface GameState {
   turn: PlayerId;
   round: number;
   bids: Record<PlayerId, number>;
+  spadesBroken: boolean;
 }
 
 export interface GameResult {
