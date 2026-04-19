@@ -373,7 +373,12 @@ const App: React.FC = () => {
           }}
         />
 
-        {betPopupOpen && <BetPopup onSelect={handlePlaceBid} />}
+        {betPopupOpen && (
+          <BetPopup
+            onSelect={handlePlaceBid}
+            hand={state?.hands?.[yourSeat] || []}
+          />
+        )}
 
         {dashboardOpen && (
           <Dashboard
