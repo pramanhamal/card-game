@@ -9,9 +9,9 @@ interface Props {
 
 const SUIT_SYMBOLS = ["♠", "♥", "♦", "♣"];
 
-// Calculate win probability for each bid based on hand strength
-function calculateBidProbability(hand: Card[], bid: number): number {
-  if (!hand || hand.length === 0) return 0.5;
+// Calculate estimated tricks for hand strength
+function estimateHandStrength(hand: Card[]): number {
+  if (!hand || hand.length === 0) return 3; // Default middle bid
 
   const cardValues: Record<string, number> = { A: 5, K: 4, Q: 3, J: 2, "10": 1, "9": 0.5, "8": 0.3 };
 
@@ -20,13 +20,13 @@ function calculateBidProbability(hand: Card[], bid: number): number {
     strength += cardValues[card.rank as string] || 0;
   }
 
-  const maxStrength = 13 * 5;
-  const estimatedTricks = (strength / maxStrength) * 13;
+  // Convert card strength to estimated tricks (0-8)
+  // Max strength = 65 (13 aces), should estimate ~8 tricks
+  // Min strength = 0, should estimate ~0-1 tricks
+  const maxStrength = 65;
+  const estimatedTricks = Math.max(1, Math.round((strength / maxStrength) * 8));
 
-  const diff = estimatedTricks - bid;
-  const probability = 1 / (1 + Math.exp(-diff * 0.8));
-
-  return Math.max(0.1, Math.min(0.95, probability));
+  return Math.min(8, estimatedTricks);
 }
 
 export const BetPopup: React.FC<Props> = ({ onSelect, hand = [] }) => {
@@ -34,15 +34,9 @@ export const BetPopup: React.FC<Props> = ({ onSelect, hand = [] }) => {
   const [timeLeft, setTimeLeft] = useState(5);
   const bids = [1, 2, 3, 4, 5, 6, 7, 8];
 
-  // Calculate best bid
-  const probabilities = bids.map((bid) => ({
-    bid,
-    probability: calculateBidProbability(hand, bid),
-  }));
-
-  const recommendedBid = probabilities.reduce((max, current) =>
-    current.probability > max.probability ? current : max
-  ).bid;
+  // Calculate recommended bid based on hand strength
+  const estimatedTricks = estimateHandStrength(hand);
+  const recommendedBid = Math.min(8, Math.max(1, estimatedTricks));
 
   // Auto-select after 5 seconds
   useEffect(() => {
