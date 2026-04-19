@@ -59,6 +59,7 @@ const App: React.FC = () => {
     playCard,
     evaluateAndAdvanceTrick,
     resetGame,
+    dealNextHand,
     applyServerState,
   } = useGameState();
 
@@ -187,6 +188,18 @@ const App: React.FC = () => {
       sock.disconnect();
     };
   }, [applyServerState]);
+
+  // Auto-deal next hand after current hand completes
+  useEffect(() => {
+    if (isHandOver && state && !isGameOver) {
+      // Wait 2 seconds before dealing next hand so players can see results
+      const timer = setTimeout(() => {
+        console.log("Auto-dealing next hand...");
+        dealNextHand();
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [isHandOver, state, isGameOver, dealNextHand]);
 
   const handleNameSubmit = (name: string) => {
     setPlayerName(name);

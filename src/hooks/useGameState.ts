@@ -74,6 +74,12 @@ export function useGameState(initial?: GameState) {
     startGame();
   }, [startGame]);
 
+  // Automatically deal new hand after current hand ends
+  const dealNextHand = useCallback(() => {
+    setIsHandOver(false);
+    startGame();
+  }, [startGame]);
+
   const applyServerState = useCallback((serverState: GameState) => {
     setState(serverState);
   }, []);
@@ -89,6 +95,7 @@ export function useGameState(initial?: GameState) {
     playCard,
     evaluateAndAdvanceTrick,
     resetGame,
+    dealNextHand,
     applyServerState,
   };
 }
