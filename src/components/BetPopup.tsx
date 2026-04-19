@@ -9,11 +9,11 @@ const SUIT_SYMBOLS = ["♠", "♥", "♦", "♣"];
 
 export const BetPopup: React.FC<Props> = ({ onSelect }) => {
   const [hovered, setHovered] = useState<number | null>(null);
-  const bids = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
+  const bids = [1, 2, 3, 4, 5, 6, 7, 8];
 
   return (
     <motion.div
-      className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-40"
+      className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50 pointer-events-auto"
       initial={{ scale: 0.85, opacity: 0 }}
       animate={{ scale: 1, opacity: 1 }}
       transition={{ type: "spring", stiffness: 380, damping: 28 }}
@@ -48,40 +48,32 @@ export const BetPopup: React.FC<Props> = ({ onSelect }) => {
         </div>
 
         {/* Bid grid */}
-        <div className="grid grid-cols-4 gap-2">
+        <div className="grid grid-cols-4 gap-3">
           {bids.map((b) => (
             <motion.button
               key={b}
-              whileHover={{ scale: 1.08 }}
-              whileTap={{ scale: 0.94 }}
+              whileHover={{ scale: 1.12 }}
+              whileTap={{ scale: 0.92 }}
               onHoverStart={() => setHovered(b)}
               onHoverEnd={() => setHovered(null)}
               onClick={() => onSelect(b)}
-              className="relative rounded-xl py-3 text-lg font-bold transition-colors"
+              className="relative rounded-lg py-4 px-3 text-lg font-bold transition-all"
               style={{
                 background:
-                  b === 0
-                    ? hovered === b
-                      ? "rgba(239,68,68,0.35)"
-                      : "rgba(239,68,68,0.18)"
-                    : hovered === b
-                    ? "rgba(255,215,0,0.28)"
-                    : "rgba(255,255,255,0.08)",
+                  hovered === b
+                    ? "rgba(255,215,0,0.35)"
+                    : "rgba(255,255,255,0.1)",
                 border:
-                  b === 0
-                    ? "1px solid rgba(239,68,68,0.4)"
-                    : "1px solid rgba(255,255,255,0.1)",
-                color: b === 0 ? "#fca5a5" : "white",
+                  hovered === b
+                    ? "2px solid rgba(255,215,0,0.6)"
+                    : "1px solid rgba(255,255,255,0.15)",
+                color: hovered === b ? "#ffd700" : "white",
               }}
             >
-              {b === 0 ? "NIL" : b}
+              {b}
             </motion.button>
           ))}
         </div>
-
-        <p className="text-center text-xs text-gray-500 mt-4">
-          Nil bid = 0 tricks scored
-        </p>
       </motion.div>
     </motion.div>
   );
