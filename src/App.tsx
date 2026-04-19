@@ -196,6 +196,10 @@ const App: React.FC = () => {
       const timer = setTimeout(() => {
         console.log("Auto-dealing next hand...");
         dealNextHand();
+        // Show betting popup for the new hand
+        setTimeout(() => {
+          setBetPopupOpen(true);
+        }, 100);
       }, 2000);
       return () => clearTimeout(timer);
     }
