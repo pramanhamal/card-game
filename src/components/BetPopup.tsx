@@ -19,12 +19,13 @@ export const BetPopup: React.FC<Props> = ({ onSelect }) => {
       transition={{ type: "spring", stiffness: 380, damping: 28 }}
     >
       <motion.div
-        className="rounded-3xl px-12 py-5 w-full max-w-2xl"
+        className="rounded-3xl px-12 py-5"
         style={{
           background: "linear-gradient(160deg, #1a3a1a 0%, #0d2410 100%)",
           border: "2px solid rgba(255,255,255,0.2)",
           boxShadow:
             "0 24px 60px rgba(0,0,0,0.9), 0 0 20px rgba(34,197,94,0.2)",
+          minWidth: "600px",
         }}
       >
         {/* Header */}
