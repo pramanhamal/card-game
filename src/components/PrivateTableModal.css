@@ -1,0 +1,226 @@
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(5px);
+}
+
+.modal-content {
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  border: 2px solid rgba(255, 215, 0, 0.3);
+  border-radius: 20px;
+  padding: 40px;
+  max-width: 500px;
+  width: 90%;
+  color: white;
+  position: relative;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.close-btn {
+  position: absolute;
+  top: 15px;
+  right: 15px;
+  width: 40px;
+  height: 40px;
+  border: none;
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.close-btn:hover {
+  background: rgba(255, 215, 0, 0.2);
+  transform: scale(1.1);
+}
+
+.modal-section h2 {
+  margin: 0 0 10px 0;
+  font-size: 1.8rem;
+  font-weight: 700;
+}
+
+.subtitle {
+  margin: 0 0 30px 0;
+  color: #aaa;
+  font-size: 0.95rem;
+}
+
+.mode-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 15px;
+  margin-bottom: 0;
+}
+
+.mode-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 20px;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 15px;
+  cursor: pointer;
+  color: white;
+  font-family: inherit;
+  transition: all 0.3s ease;
+}
+
+.mode-btn:hover {
+  border-color: rgba(255, 215, 0, 0.5);
+  background: rgba(255, 215, 0, 0.1);
+}
+
+.btn-icon {
+  font-size: 2rem;
+}
+
+.btn-text {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.btn-desc {
+  font-size: 0.75rem;
+  color: #aaa;
+  text-align: center;
+}
+
+.pin-input {
+  width: 100%;
+  padding: 15px;
+  margin-bottom: 20px;
+  border: 2px solid rgba(255, 215, 0, 0.3);
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+  color: white;
+  font-size: 1.2rem;
+  font-weight: 600;
+  letter-spacing: 2px;
+  text-align: center;
+  font-family: "Courier New", monospace;
+  transition: all 0.3s ease;
+}
+
+.pin-input:focus {
+  outline: none;
+  border-color: rgba(255, 215, 0, 0.8);
+  background: rgba(255, 215, 0, 0.05);
+  box-shadow: 0 0 15px rgba(255, 215, 0, 0.2);
+}
+
+.error-msg {
+  background: rgba(255, 50, 50, 0.2);
+  border: 1px solid rgba(255, 50, 50, 0.5);
+  color: #ff8080;
+  padding: 10px 15px;
+  border-radius: 8px;
+  margin-bottom: 15px;
+  font-size: 0.9rem;
+}
+
+.pin-display {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 30px;
+  min-height: 80px;
+  align-items: center;
+}
+
+.pin-circles {
+  display: flex;
+  gap: 10px;
+}
+
+.pin-digit {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.2) 0%, rgba(255, 215, 0, 0.05) 100%);
+  border: 2px solid rgba(255, 215, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #ffd700;
+}
+
+.pin-hint {
+  margin: 0;
+  color: #aaa;
+  font-size: 0.9rem;
+}
+
+.modal-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 15px;
+}
+
+.btn-primary,
+.btn-secondary {
+  padding: 12px 24px;
+  border: none;
+  border-radius: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 1rem;
+  font-family: inherit;
+  transition: all 0.3s ease;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #ffd700 0%, #ffb700 100%);
+  color: #1a1a2e;
+}
+
+.btn-primary:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 5px 20px rgba(255, 215, 0, 0.4);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+}
+
+.btn-secondary:hover {
+  border-color: rgba(255, 215, 0, 0.5);
+  background: rgba(255, 215, 0, 0.1);
+}
+
+@media (max-width: 600px) {
+  .modal-content {
+    padding: 30px 20px;
+  }
+
+  .mode-buttons {
+    grid-template-columns: 1fr;
+  }
+
+  .modal-actions {
+    grid-template-columns: 1fr;
+  }
+}

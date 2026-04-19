@@ -150,10 +150,79 @@ function legalMoves(state, player) {
   return [...hand];
 }
 
+function generateAIBid(hand) {
+  // Simple AI bidding strategy: count high cards and estimate tricks
+  let highCardCount = 0;
+  const cardValues = {};
+
+  for (const card of hand) {
+    const value = rankValue(card.rank);
+    if (value >= 12) highCardCount++; // Q, K, A
+    if (!cardValues[card.suit]) {
+      cardValues[card.suit] = 0;
+    }
+    cardValues[card.suit] += value;
+  }
+
+  // Estimate tricks: 1 for each high card, plus 0.5 for each strong suit
+  let estimatedTricks = highCardCount;
+  for (const suit of SUITS) {
+    const suitValue = cardValues[suit] || 0;
+    if (suitValue > 20) estimatedTricks += 0.5; // Strong suit (e.g., A, K, Q)
+  }
+
+  // Bid conservatively: 60% of estimated tricks
+  const bid = Math.max(0, Math.min(13, Math.round(estimatedTricks * 0.6)));
+  return bid;
+}
+
+function generateAICardPlay(state, player, legalCards) {
+  // Simple AI card play strategy
+  if (legalCards.length === 0) return null;
+  if (legalCards.length === 1) return legalCards[0];
+
+  const trick = state.trick;
+  const leadEntry = Object.entries(trick).find(([, c]) => c !== null);
+  const leadSuit = leadEntry && leadEntry[1] ? leadEntry[1].suit : null;
+
+  // If leading, play lowest card to preserve high cards
+  if (!leadSuit) {
+    return legalCards.reduce((lowest, current) => {
+      const lowestValue = rankValue(lowest.rank);
+      const currentValue = rankValue(current.rank);
+      return currentValue < lowestValue ? current : lowest;
+    });
+  }
+
+  // If following lead suit, try to win if possible
+  const tricksWon = state.tricksWon[player] || 0;
+  const bid = state.bids[player] || 0;
+  const needsWin = tricksWon < bid;
+
+  if (needsWin) {
+    // Try to play a card that wins the trick
+    const highestCard = legalCards.reduce((highest, current) => {
+      const highestValue = rankValue(highest.rank);
+      const currentValue = rankValue(current.rank);
+      return currentValue > highestValue ? current : highest;
+    });
+    return highestCard;
+  }
+
+  // Otherwise play lowest card to minimize loss
+  return legalCards.reduce((lowest, current) => {
+    const lowestValue = rankValue(lowest.rank);
+    const currentValue = rankValue(current.rank);
+    return currentValue < lowestValue ? current : lowest;
+  });
+}
+
 export {
   initializeGame,
   playCard,
   evaluateTrick,
   calculateScores,
   legalMoves,
+  generateAIBid,
+  generateAICardPlay,
 };
