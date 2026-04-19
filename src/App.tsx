@@ -123,6 +123,7 @@ const App: React.FC = () => {
         seating: Record<string, { name: string; isAI: boolean }>;
       }) => {
         console.log("=== START_GAME EVENT RECEIVED ===", payload);
+        console.log("Current socket ID:", sock.id);
 
         // Use payload data directly to avoid stale closure issues
         if (!payload.room || !payload.room.players) {
@@ -130,19 +131,23 @@ const App: React.FC = () => {
           return;
         }
 
-        // Find our seat from the payload's room players list
+        // Find OUR seat by matching our socket ID with the players list
         let ourSeat: PlayerId | null = null;
         for (const player of payload.room.players) {
-          // Check by socket ID if available, otherwise take first matching seat
-          if (player.seat) {
+          console.log("Checking player:", player.id, "against socket:", sock.id);
+          // Match by socket ID - each player has a unique socket ID
+          if (player.id === sock.id && player.seat) {
             ourSeat = player.seat as PlayerId;
-            console.log("Found our seat in payload:", ourSeat);
+            console.log("✓ Found OUR seat in payload:", ourSeat, "for socket:", sock.id);
             break;
           }
         }
 
         if (!ourSeat) {
-          console.error("Could not find our seat in start_game payload");
+          console.error("Could not find our seat in start_game payload", {
+            socketId: sock.id,
+            players: payload.room.players.map(p => ({ id: p.id, seat: p.seat }))
+          });
           return;
         }
 
