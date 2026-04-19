@@ -13,7 +13,12 @@ export const BetPopup: React.FC<Props> = ({ onSelect }) => {
 
   return (
     <motion.div
-      className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50 pointer-events-auto"
+      className="fixed z-50 pointer-events-auto"
+      style={{
+        top: "45%",
+        left: "50%",
+        transform: "translate(-50%, -50%)",
+      }}
       initial={{ scale: 0.85, opacity: 0 }}
       animate={{ scale: 1, opacity: 1 }}
       transition={{ type: "spring", stiffness: 380, damping: 28 }}
