@@ -195,7 +195,13 @@ const App: React.FC = () => {
       // Wait 2 seconds before dealing next hand so players can see results
       const timer = setTimeout(() => {
         console.log("Auto-dealing next hand...");
-        dealNextHand();
+        // Notify server to deal next hand (for multiplayer)
+        if (currentRoom) {
+          socket?.emit("deal_next_hand", { roomId: currentRoom.id });
+        } else {
+          // For singleplayer, deal locally
+          dealNextHand();
+        }
         // Show betting popup for the new hand
         setTimeout(() => {
           setBetPopupOpen(true);
@@ -203,7 +209,7 @@ const App: React.FC = () => {
       }, 2000);
       return () => clearTimeout(timer);
     }
-  }, [isHandOver, state, isGameOver, dealNextHand]);
+  }, [isHandOver, state, isGameOver, dealNextHand, socket, currentRoom]);
 
   const handleNameSubmit = (name: string) => {
     setPlayerName(name);

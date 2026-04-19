@@ -463,6 +463,40 @@ io.on("connection", (socket) => {
     }
   });
 
+  socket.on("deal_next_hand", ({ roomId }) => {
+    const room = rooms.get(roomId);
+    if (!room) return;
+
+    console.log("Dealing next hand for room:", roomId);
+
+    // Initialize new game state for the next hand
+    room.gameState = initializeGame();
+
+    // Get seating info for the new hand
+    const seating = getSeatingInfo(room);
+    for (const aiSeat of room.aiPlayers) {
+      seating[aiSeat] = {
+        name: "AI Bot",
+        isAI: true,
+      };
+    }
+
+    const playersList = Array.from(room.players.values()).map((p) => ({
+      id: p.socketId,
+      name: p.name,
+      seat: p.seat,
+    }));
+
+    // Broadcast the new game state to all players
+    io.to(roomId).emit("start_game", {
+      room: { id: roomId, players: playersList },
+      initialGameState: room.gameState,
+      seating,
+    });
+
+    console.log("New hand started for room:", roomId);
+  });
+
   socket.on("play_card", ({ roomId, card }) => {
     const room = rooms.get(roomId);
     if (!room || !room.gameState) return;
