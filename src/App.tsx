@@ -223,7 +223,7 @@ const App: React.FC = () => {
     }
   }, [isHandOver, state, isGameOver, dealNextHand, socket, currentRoom]);
 
-  // Auto-play card after 5 seconds if player doesn't select
+  // Auto-play card after 1 second if player doesn't select
   useEffect(() => {
     if (!state || !yourSeat || state.turn !== yourSeat) return;
 
@@ -238,7 +238,7 @@ const App: React.FC = () => {
       const sortedCards = [...legalMovesForPlayer].sort((a, b) => (cardValues[a.rank as string] || 0) - (cardValues[b.rank as string] || 0));
       const cardToPlay = sortedCards[0];
       handlePlayCard(yourSeat, cardToPlay);
-    }, 5000);
+    }, 1000);
 
     return () => clearTimeout(timer);
   }, [state, yourSeat, currentRoom]);

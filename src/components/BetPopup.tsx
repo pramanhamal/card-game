@@ -31,14 +31,14 @@ function estimateHandStrength(hand: Card[]): number {
 
 export const BetPopup: React.FC<Props> = ({ onSelect, hand = [] }) => {
   const [hovered, setHovered] = useState<number | null>(null);
-  const [timeLeft, setTimeLeft] = useState(5);
+  const [timeLeft, setTimeLeft] = useState(1);
   const bids = [1, 2, 3, 4, 5, 6, 7, 8];
 
   // Calculate recommended bid based on hand strength
   const estimatedTricks = estimateHandStrength(hand);
   const recommendedBid = Math.min(8, Math.max(1, estimatedTricks));
 
-  // Auto-select after 5 seconds
+  // Auto-select after 1 second
   useEffect(() => {
     const timer = setInterval(() => {
       setTimeLeft((prev) => {
@@ -145,7 +145,7 @@ export const BetPopup: React.FC<Props> = ({ onSelect, hand = [] }) => {
             <motion.div
               className="h-full bg-gradient-to-r from-green-500 to-blue-500"
               initial={{ width: "100%" }}
-              animate={{ width: `${(timeLeft / 5) * 100}%` }}
+              animate={{ width: `${(timeLeft / 1) * 100}%` }}
               transition={{ linear: true, duration: 0.1 }}
             />
           </div>
