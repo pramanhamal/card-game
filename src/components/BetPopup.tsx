@@ -13,22 +13,18 @@ export const BetPopup: React.FC<Props> = ({ onSelect }) => {
 
   return (
     <motion.div
-      className="fixed inset-0 flex items-end justify-center p-4"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      style={{ background: "rgba(0,0,0,0.3)", backdropFilter: "blur(3px)" }}
-      pointerEvents="auto"
+      className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-40"
+      initial={{ scale: 0.85, opacity: 0 }}
+      animate={{ scale: 1, opacity: 1 }}
+      transition={{ type: "spring", stiffness: 380, damping: 28 }}
     >
       <motion.div
-        initial={{ scale: 0.88, opacity: 0, y: 40 }}
-        animate={{ scale: 1, opacity: 1, y: 0 }}
-        transition={{ type: "spring", stiffness: 380, damping: 28 }}
-        className="rounded-t-3xl p-8 w-full max-w-lg mb-0"
+        className="rounded-3xl p-8 w-fit"
         style={{
           background: "linear-gradient(160deg, #1a3a1a 0%, #0d2410 100%)",
-          border: "1px solid rgba(255,255,255,0.12)",
+          border: "2px solid rgba(255,255,255,0.2)",
           boxShadow:
-            "0 -24px 60px rgba(0,0,0,0.8), 0 0 0 1px rgba(255,255,255,0.06)",
+            "0 24px 60px rgba(0,0,0,0.9), 0 0 20px rgba(34,197,94,0.2)",
         }}
       >
         {/* Header */}
