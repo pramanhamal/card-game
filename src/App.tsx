@@ -13,6 +13,7 @@ import { PrivateTableModal } from "./components/PrivateTableModal";
 import { WaitingRoom } from "./components/WaitingRoom";
 import { MultiplayerLobby } from "./components/MultiplayerLobby";
 import type { Card, PlayerId, GameState, GameMode } from "./types/spades";
+import { legalMoves } from "./utils/gameLogic";
 import { SERVER_URL } from "./config";
 
 interface Player {
@@ -210,6 +211,26 @@ const App: React.FC = () => {
       return () => clearTimeout(timer);
     }
   }, [isHandOver, state, isGameOver, dealNextHand, socket, currentRoom]);
+
+  // Auto-play card after 5 seconds if player doesn't select
+  useEffect(() => {
+    if (!state || !yourSeat || state.turn !== yourSeat) return;
+
+    // Get legal moves for current player
+    const legalMovesForPlayer = legalMoves(state, yourSeat);
+    if (legalMovesForPlayer.length === 0) return;
+
+    const timer = setTimeout(() => {
+      console.log("Auto-playing card for:", yourSeat);
+      // Auto-play the lowest card (simple strategy)
+      const cardValues: Record<string, number> = { A: 14, K: 13, Q: 12, J: 11, "10": 10, "9": 9, "8": 8, "7": 7, "6": 6, "5": 5, "4": 4, "3": 3, "2": 2 };
+      const sortedCards = [...legalMovesForPlayer].sort((a, b) => (cardValues[a.rank as string] || 0) - (cardValues[b.rank as string] || 0));
+      const cardToPlay = sortedCards[0];
+      handlePlayCard(yourSeat, cardToPlay);
+    }, 5000);
+
+    return () => clearTimeout(timer);
+  }, [state, yourSeat, currentRoom]);
 
   const handleNameSubmit = (name: string) => {
     setPlayerName(name);
