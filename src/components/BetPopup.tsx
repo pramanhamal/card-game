@@ -13,13 +13,13 @@ export const BetPopup: React.FC<Props> = ({ onSelect }) => {
 
   return (
     <motion.div
-      className="fixed top-24 left-1/2 transform -translate-x-1/2 z-50 pointer-events-auto"
-      initial={{ scale: 0.85, opacity: 0, y: -20 }}
-      animate={{ scale: 1, opacity: 1, y: 0 }}
+      className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50 pointer-events-auto"
+      initial={{ scale: 0.85, opacity: 0 }}
+      animate={{ scale: 1, opacity: 1 }}
       transition={{ type: "spring", stiffness: 380, damping: 28 }}
     >
       <motion.div
-        className="rounded-3xl p-8 w-fit"
+        className="rounded-3xl px-12 py-5 w-full max-w-2xl"
         style={{
           background: "linear-gradient(160deg, #1a3a1a 0%, #0d2410 100%)",
           border: "2px solid rgba(255,255,255,0.2)",
@@ -28,8 +28,8 @@ export const BetPopup: React.FC<Props> = ({ onSelect }) => {
         }}
       >
         {/* Header */}
-        <div className="text-center mb-5">
-          <div className="flex justify-center gap-3 mb-2 text-lg">
+        <div className="text-center mb-3">
+          <div className="flex justify-center gap-3 mb-1 text-base">
             {SUIT_SYMBOLS.map((s, i) => (
               <span
                 key={i}
@@ -39,16 +39,16 @@ export const BetPopup: React.FC<Props> = ({ onSelect }) => {
               </span>
             ))}
           </div>
-          <h2 className="text-xl font-bold text-white tracking-wide">
+          <h2 className="text-lg font-bold text-white tracking-wide">
             Place Your Bid
           </h2>
-          <p className="text-xs text-gray-400 mt-1">
+          <p className="text-xs text-gray-400 mt-0.5">
             How many tricks will you win?
           </p>
         </div>
 
         {/* Bid grid */}
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-8 gap-2">
           {bids.map((b) => (
             <motion.button
               key={b}
@@ -57,7 +57,7 @@ export const BetPopup: React.FC<Props> = ({ onSelect }) => {
               onHoverStart={() => setHovered(b)}
               onHoverEnd={() => setHovered(null)}
               onClick={() => onSelect(b)}
-              className="relative rounded-lg py-4 px-3 text-lg font-bold transition-all"
+              className="relative rounded-lg py-3 px-2 text-base font-bold transition-all"
               style={{
                 background:
                   hovered === b
