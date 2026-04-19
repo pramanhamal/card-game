@@ -12,7 +12,9 @@ import {
 } from "../utils/gameLogic";
 
 export function useGameState(initial?: GameState) {
-  const [state, setState] = useState<GameState>(initial ?? initializeGame());
+  // Start with null - game state is set only when server sends start_game event
+  // This allows the lobby to show while waiting for players
+  const [state, setState] = useState<GameState | null>(initial ?? null);
   const [history, setHistory] = useState<GameResult[]>([]);
   const [isHandOver, setIsHandOver] = useState(false);
   const [isGameOver, setIsGameOver] = useState(false);

@@ -305,46 +305,6 @@ const App: React.FC = () => {
     );
   }
 
-  if (showGameStartPopup) {
-    return (
-      <div
-        className="fixed inset-0 flex items-center justify-center"
-        style={{
-          background:
-            "radial-gradient(ellipse at 50% 45%, #1e7a42 0%, #0d4222 60%, #050f08 100%)",
-        }}
-      >
-        <div
-          className="text-center px-10 py-8 rounded-2xl"
-          style={{
-            background: "rgba(0,0,0,0.55)",
-            border: "1px solid rgba(255,255,255,0.12)",
-            backdropFilter: "blur(10px)",
-          }}
-        >
-          <div className="text-5xl mb-4 animate-bounce">♠</div>
-          <div className="text-2xl font-bold text-white">All players are in!</div>
-          <div className="text-sm text-gray-400 mt-2">Starting the game…</div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!yourSeat && currentRoom && currentRoomMode !== "multiplayer") {
-    // Show WaitingRoom for non-multiplayer modes (Hotspot, Private, Singleplayer)
-    return (
-      <WaitingRoom
-        roomId={currentRoom.id}
-        players={currentRoom.players}
-        currentPlayerSeat={yourSeat}
-        isHost={isHost}
-        mode={currentRoomMode || "multiplayer"}
-        onStartGame={handleStartGame}
-        onLeave={handleLeaveRoom}
-      />
-    );
-  }
-
   console.log("=== RENDER CHECK ===", {
     hasState: !!state,
     hasCurrentRoom: !!currentRoom,
@@ -354,10 +314,10 @@ const App: React.FC = () => {
     showGameStartPopup,
     currentRoom: currentRoom?.id,
     gameMode,
+    currentRoomMode,
   });
 
-  // ** GAME TABLE CHECK FIRST - before lobby checks **
-  // If game has started, show the table regardless of mode
+  // ** GAME TABLE: Show when game has started (highest priority) **
   if (state && currentRoom && yourSeat && !isGameOver) {
     console.log("✓✓✓ Rendering TABLE - all conditions met! yourSeat:", yourSeat);
     return (
@@ -462,32 +422,69 @@ const App: React.FC = () => {
     }
   }
 
-  // ** MULTIPLAYER LOBBY: for multiplayer mode when game hasn't started yet **
+  // ** MULTIPLAYER LOBBY: Show while in multiplayer room and game hasn't started **
   if (currentRoom && currentRoomMode === "multiplayer" && !state) {
-    // For multiplayer, show visual lobby with player profiles only if game hasn't started
+    // Show lobby with visual table while players are joining
+    // Show "Starting game..." popup when 4 players have joined
     return (
-      <MultiplayerLobby
-        rooms={rooms}
-        currentRoom={currentRoom}
-        yourSeat={yourSeat}
-        onCreateRoom={handleCreateRoom}
-        onJoinRoom={handleJoinRoom}
-        onLeaveRoom={handleLeaveRoom}
-      />
+      <>
+        {showGameStartPopup && (
+          <div
+            className="fixed inset-0 flex items-center justify-center z-50"
+            style={{
+              background:
+                "radial-gradient(ellipse at 50% 45%, #1e7a42 0%, #0d4222 60%, #050f08 100%)",
+            }}
+          >
+            <div
+              className="text-center px-10 py-8 rounded-2xl"
+              style={{
+                background: "rgba(0,0,0,0.55)",
+                border: "1px solid rgba(255,255,255,0.12)",
+                backdropFilter: "blur(10px)",
+              }}
+            >
+              <div className="text-5xl mb-4 animate-bounce">♠</div>
+              <div className="text-2xl font-bold text-white">All players are in!</div>
+              <div className="text-sm text-gray-400 mt-2">Starting the game…</div>
+            </div>
+          </div>
+        )}
+        <MultiplayerLobby
+          rooms={rooms}
+          currentRoom={currentRoom}
+          yourSeat={yourSeat}
+          onCreateRoom={handleCreateRoom}
+          onJoinRoom={handleJoinRoom}
+          onLeaveRoom={handleLeaveRoom}
+        />
+      </>
     );
   }
 
-  if (gameMode === "multiplayer" && currentRoom && !state) {
-    // Show multiplayer lobby with the current room the player joined
+  if (showGameStartPopup) {
+    // Show popup for non-multiplayer modes
     return (
-      <MultiplayerLobby
-        rooms={rooms}
-        currentRoom={currentRoom}
-        yourSeat={yourSeat}
-        onCreateRoom={handleCreateRoom}
-        onJoinRoom={handleJoinRoom}
-        onLeaveRoom={handleLeaveRoom}
-      />
+      <div
+        className="fixed inset-0 flex items-center justify-center"
+        style={{
+          background:
+            "radial-gradient(ellipse at 50% 45%, #1e7a42 0%, #0d4222 60%, #050f08 100%)",
+        }}
+      >
+        <div
+          className="text-center px-10 py-8 rounded-2xl"
+          style={{
+            background: "rgba(0,0,0,0.55)",
+            border: "1px solid rgba(255,255,255,0.12)",
+            backdropFilter: "blur(10px)",
+          }}
+        >
+          <div className="text-5xl mb-4 animate-bounce">♠</div>
+          <div className="text-2xl font-bold text-white">All players are in!</div>
+          <div className="text-sm text-gray-400 mt-2">Starting the game…</div>
+        </div>
+      </div>
     );
   }
 
