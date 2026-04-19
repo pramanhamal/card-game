@@ -12,6 +12,7 @@ interface Room {
   id: string;
   players: Player[];
   started?: boolean;
+  mode?: string;
 }
 
 interface MultiplayerLobbyProps {

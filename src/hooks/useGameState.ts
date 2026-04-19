@@ -34,10 +34,13 @@ export function useGameState(initial?: GameState) {
   }, []);
 
   const placeBid = useCallback((player: PlayerId, bid: number) => {
-    setState((prev) => ({
-      ...prev,
-      bids: { ...prev.bids, [player]: bid },
-    }));
+    setState((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        bids: { ...prev.bids, [player]: bid },
+      };
+    });
   }, []);
 
   const playCard = useCallback((player: PlayerId, card: Card) => {

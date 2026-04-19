@@ -19,13 +19,14 @@ import { SERVER_URL } from "./config";
 interface Player {
   id: string;
   name: string;
-  seat?: string;
+  seat: string | null;
 }
 
 interface Room {
   id: string;
   players: Player[];
   started?: boolean;
+  mode?: string;
 }
 
 const App: React.FC = () => {
@@ -148,7 +149,7 @@ const App: React.FC = () => {
         if (!ourSeat) {
           console.error("Could not find our seat in start_game payload", {
             socketId: sock.id,
-            players: payload.room.players.map(p => ({ id: p.id, seat: p.seat }))
+            players: payload.room.players.map((p: any) => ({ id: p.id, seat: p.seat }))
           });
           return;
         }
