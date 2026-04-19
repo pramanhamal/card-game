@@ -87,6 +87,11 @@ export function useGameState(initial?: GameState) {
     setState(serverState);
   }, []);
 
+  const applyServerStateNewHand = useCallback((serverState: GameState) => {
+    setState(serverState);
+    setIsHandOver(false);  // Reset hand completion for new hand
+  }, []);
+
   return {
     state,
     isHandOver,
@@ -100,5 +105,6 @@ export function useGameState(initial?: GameState) {
     resetGame,
     dealNextHand,
     applyServerState,
+    applyServerStateNewHand,
   };
 }

@@ -63,6 +63,7 @@ const App: React.FC = () => {
     resetGame,
     dealNextHand,
     applyServerState,
+    applyServerStateNewHand,
   } = useGameState();
 
   useEffect(() => {
@@ -162,7 +163,16 @@ const App: React.FC = () => {
           players: payload.room.players || [],
         });
         setYourSeat(ourSeat);
-        applyServerState(payload.initialGameState);
+
+        // If this is a new hand (state already exists), reset isHandOver
+        // Otherwise, it's the initial game start
+        if (state && state.round > 0) {
+          console.log("New hand dealt - resetting isHandOver");
+          applyServerStateNewHand(payload.initialGameState);
+        } else {
+          console.log("Initial game start");
+          applyServerState(payload.initialGameState);
+        }
 
         const seating = payload.seating || {};
         setSeatingNames({
