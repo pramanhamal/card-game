@@ -15,7 +15,7 @@ export const BetPopup: React.FC<Props> = ({ onSelect }) => {
     <motion.div
       className="fixed z-50 pointer-events-auto"
       style={{
-        top: "45%",
+        top: "35%",
         left: "50%",
       }}
       initial={{ scale: 0.85, opacity: 0, x: "-50%", y: "-50%" }}
