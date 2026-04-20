@@ -18,6 +18,7 @@ export function useGameState(initial?: GameState) {
   const [history, setHistory] = useState<GameResult[]>([]);
   const [isHandOver, setIsHandOver] = useState(false);
   const [isGameOver, setIsGameOver] = useState(false);
+  const [completedRound, setCompletedRound] = useState<number>(-1);
 
   const totalScores = history.reduce((acc, r) => {
     (Object.keys(r.totalScores) as PlayerId[]).forEach((p) => {
@@ -31,6 +32,7 @@ export function useGameState(initial?: GameState) {
     setIsHandOver(false);
     setIsGameOver(false);
     setHistory([]);
+    setCompletedRound(-1);
   }, []);
 
   const placeBid = useCallback((player: PlayerId, bid: number) => {
@@ -60,7 +62,11 @@ export function useGameState(initial?: GameState) {
       const totalTricksPlayed = Object.values(copy.tricksWon).reduce((sum, tricks) => sum + tricks, 0);
       const isHandDone = totalTricksPlayed >= 13;
 
-      if (isHandDone && !isHandOver) {
+      // Only mark hand as over if:
+      // 1. All 13 tricks have been played
+      // 2. We haven't already marked this round as complete (checked by round number)
+      if (isHandDone && copy.round !== completedRound) {
+        setCompletedRound(copy.round);
         setIsHandOver(true);
         const scores = calculateScores(copy.bids, copy.tricksWon);
         setHistory((h) => [
@@ -76,7 +82,7 @@ export function useGameState(initial?: GameState) {
       }
       return copy;
     });
-  }, [totalScores, isHandOver]);
+  }, [totalScores, completedRound]);
 
   const resetGame = useCallback(() => {
     startGame();
@@ -95,6 +101,7 @@ export function useGameState(initial?: GameState) {
   const applyServerStateNewHand = useCallback((serverState: GameState) => {
     setState(serverState);
     setIsHandOver(false);  // Reset hand completion for new hand
+    setCompletedRound(-1); // Reset so next round can be detected
   }, []);
 
   const endGame = useCallback(() => {
