@@ -92,6 +92,10 @@ export function useGameState(initial?: GameState) {
     setIsHandOver(false);  // Reset hand completion for new hand
   }, []);
 
+  const endGame = useCallback(() => {
+    setIsGameOver(true);
+  }, []);
+
   return {
     state,
     isHandOver,
@@ -106,5 +110,6 @@ export function useGameState(initial?: GameState) {
     dealNextHand,
     applyServerState,
     applyServerStateNewHand,
+    endGame,
   };
 }

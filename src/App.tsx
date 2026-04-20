@@ -64,6 +64,7 @@ const App: React.FC = () => {
     dealNextHand,
     applyServerState,
     applyServerStateNewHand,
+    endGame,
   } = useGameState();
 
   useEffect(() => {
@@ -222,6 +223,14 @@ const App: React.FC = () => {
       return () => clearTimeout(timer);
     }
   }, [isHandOver, state, isGameOver, dealNextHand, socket, currentRoom]);
+
+  // End game after 2 rounds
+  useEffect(() => {
+    if (gameHistory.length >= 2 && !isGameOver) {
+      console.log("Game Over! 2 rounds completed. Final scores:", totalScores);
+      endGame();
+    }
+  }, [gameHistory.length, isGameOver, endGame, totalScores]);
 
   // Auto-play card after 1 second if player doesn't select
   useEffect(() => {
