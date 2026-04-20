@@ -69,28 +69,28 @@ export function useGameState(initial?: GameState) {
 
     const totalTricksPlayed = Object.values(state.tricksWon).reduce((sum, tricks) => sum + tricks, 0);
 
-    if (state.round >= 2) {
-      console.log(`[Round ${state.round}] Evaluating tricks: ${totalTricksPlayed}/13, completedRound: ${completedRound}, isHandOver: ${isHandOver}`);
-    }
+    console.log(`[Hand Complete Check] Round: ${state.round}, Tricks: ${totalTricksPlayed}/13, completedRound: ${completedRound}, isHandOver: ${isHandOver}`);
 
     // Only trigger if: (1) all 13 tricks played, (2) this round hasn't been marked complete yet
     if (totalTricksPlayed >= 13 && state.round !== completedRound) {
-      if (state.round >= 2) {
-        console.log(`[Round ${state.round}] ✓ HAND COMPLETE! Setting isHandOver to true`);
-      }
+      console.log(`✅ HAND COMPLETE! Round ${state.round} - Adding to history`);
       setCompletedRound(state.round);
       setIsHandOver(true);
       const scores = calculateScores(state.bids, state.tricksWon);
-      setHistory((h) => [
-        ...h,
-        {
-          gameId: state.round,
-          bids: { ...state.bids },
-          tricksWon: { ...state.tricksWon },
-          scores,
-          totalScores: totalScores as Record<PlayerId, number>,
-        },
-      ]);
+      setHistory((h) => {
+        const newHistory = [
+          ...h,
+          {
+            gameId: state.round,
+            bids: { ...state.bids },
+            tricksWon: { ...state.tricksWon },
+            scores,
+            totalScores: totalScores as Record<PlayerId, number>,
+          },
+        ];
+        console.log(`📊 History updated. New history length: ${newHistory.length}`);
+        return newHistory;
+      });
     }
   }, [state, isHandOver, completedRound, totalScores]);
 
@@ -99,10 +99,13 @@ export function useGameState(initial?: GameState) {
   }, [startGame]);
 
   // Automatically deal new hand after current hand ends
+  // NOTE: This should NOT clear history - we need to preserve previous rounds
   const dealNextHand = useCallback(() => {
+    setState(initializeGame());
     setIsHandOver(false);
-    startGame();
-  }, [startGame]);
+    setCompletedRound(-1);
+    // DO NOT call setHistory([]) here - we need to keep previous rounds!
+  }, []);
 
   const applyServerState = useCallback((serverState: GameState) => {
     setState(serverState);

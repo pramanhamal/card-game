@@ -241,8 +241,9 @@ const App: React.FC = () => {
 
   // End game after 2 rounds
   useEffect(() => {
+    console.log(`[Game Over Check] gameHistory.length: ${gameHistory.length}, isGameOver: ${isGameOver}`);
     if (gameHistory.length >= 2 && !isGameOver) {
-      console.log("Game Over! 2 rounds completed. Final scores:", totalScores);
+      console.log("✅ GAME OVER! 2 rounds completed. Final scores:", totalScores);
       endGame();
     }
   }, [gameHistory.length, isGameOver, endGame, totalScores]);
@@ -453,13 +454,16 @@ const App: React.FC = () => {
         )}
 
         {isGameOver && (
-          <GameOverPopup
-            totalScores={totalScores!}
-            seatingNames={seatingNames}
-            gameHistory={gameHistory}
-            onPlayAgain={handlePlayAgain}
-            onJoinMultiplayer={handleJoinMultiplayer}
-          />
+          <>
+            {console.log("🎮 RENDERING GAME OVER POPUP - isGameOver:", isGameOver)}
+            <GameOverPopup
+              totalScores={totalScores!}
+              seatingNames={seatingNames}
+              gameHistory={gameHistory}
+              onPlayAgain={handlePlayAgain}
+              onJoinMultiplayer={handleJoinMultiplayer}
+            />
+          </>
         )}
 
         <div className="absolute top-4 right-4 z-20 flex items-center space-x-2">
