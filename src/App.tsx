@@ -308,6 +308,12 @@ const App: React.FC = () => {
     setBetPopupOpen(true);
   };
 
+  const handleJoinMultiplayer = () => {
+    resetGame();
+    setGameMode(null);
+    setShowGameModeScreen(true);
+  };
+
   const handleSelectGameMode = (mode: GameMode) => {
     console.log("handleSelectGameMode called with mode:", mode);
     setGameMode(mode);
@@ -449,7 +455,10 @@ const App: React.FC = () => {
         {isGameOver && (
           <GameOverPopup
             totalScores={totalScores!}
+            seatingNames={seatingNames}
+            gameHistory={gameHistory}
             onPlayAgain={handlePlayAgain}
+            onJoinMultiplayer={handleJoinMultiplayer}
           />
         )}
 
