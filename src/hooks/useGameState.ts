@@ -69,8 +69,15 @@ export function useGameState(initial?: GameState) {
 
     const totalTricksPlayed = Object.values(state.tricksWon).reduce((sum, tricks) => sum + tricks, 0);
 
+    if (state.round >= 2) {
+      console.log(`[Round ${state.round}] Evaluating tricks: ${totalTricksPlayed}/13, completedRound: ${completedRound}, isHandOver: ${isHandOver}`);
+    }
+
     // Only trigger if: (1) all 13 tricks played, (2) this round hasn't been marked complete yet
     if (totalTricksPlayed >= 13 && state.round !== completedRound) {
+      if (state.round >= 2) {
+        console.log(`[Round ${state.round}] ✓ HAND COMPLETE! Setting isHandOver to true`);
+      }
       setCompletedRound(state.round);
       setIsHandOver(true);
       const scores = calculateScores(state.bids, state.tricksWon);

@@ -168,7 +168,9 @@ const App: React.FC = () => {
         // If this is a new hand (state already exists), reset isHandOver
         // Otherwise, it's the initial game start
         if (state && state.round > 0) {
-          console.log("New hand dealt - resetting isHandOver");
+          if (payload.initialGameState.round >= 2) {
+            console.log(`[Round ${payload.initialGameState.round}] New hand dealt - closing previous popup and resetting isHandOver`);
+          }
           // Close the previous betting popup before showing new hand
           setBetPopupOpen(false);
           applyServerStateNewHand(payload.initialGameState);
@@ -185,10 +187,14 @@ const App: React.FC = () => {
           west: seating.west?.name || "West",
         });
 
-        console.log("Showing game start popup");
+        if (payload.initialGameState.round >= 2) {
+          console.log(`[Round ${payload.initialGameState.round}] start_game handler: Showing game start popup`);
+        }
         setShowGameStartPopup(true);
         setTimeout(() => {
-          console.log("Closing game start popup, showing bet popup");
+          if (payload.initialGameState.round >= 2) {
+            console.log(`[Round ${payload.initialGameState.round}] start_game handler: 1.5s timeout fired, closing popup and showing betting popup`);
+          }
           setShowGameStartPopup(false);
           setBetPopupOpen(true);
         }, 1500);
@@ -207,9 +213,14 @@ const App: React.FC = () => {
   // Auto-deal next hand after current hand completes
   useEffect(() => {
     if (isHandOver && state && !isGameOver) {
+      if (state.round >= 2) {
+        console.log(`[Round ${state.round}] Auto-deal effect triggered! isHandOver=${isHandOver}, waiting 2 seconds...`);
+      }
       // Wait 2 seconds before dealing next hand so players can see results
       const timer = setTimeout(() => {
-        console.log("Auto-dealing next hand...");
+        if (state.round >= 2) {
+          console.log(`[Round ${state.round}] Auto-deal 2-second timer fired, emitting deal_next_hand`);
+        }
         // Notify server to deal next hand (for multiplayer)
         if (currentRoom) {
           socket?.emit("deal_next_hand", { roomId: currentRoom.id });
