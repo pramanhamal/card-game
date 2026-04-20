@@ -165,17 +165,17 @@ const App: React.FC = () => {
         });
         setYourSeat(ourSeat);
 
-        // If this is a new hand (state already exists), reset isHandOver
+        // If this is a new hand (check payload round, not old state), reset isHandOver
         // Otherwise, it's the initial game start
-        if (state && state.round > 0) {
+        if (payload.initialGameState.round > 1) {
           if (payload.initialGameState.round >= 2) {
-            console.log(`[Round ${payload.initialGameState.round}] New hand dealt - closing previous popup and resetting isHandOver`);
+            console.log(`[Round ${payload.initialGameState.round}] ✓✓✓ NEW HAND DETECTED - closing previous popup and resetting isHandOver`);
           }
           // Close the previous betting popup before showing new hand
           setBetPopupOpen(false);
           applyServerStateNewHand(payload.initialGameState);
         } else {
-          console.log("Initial game start");
+          console.log("Initial game start (Round 1)");
           applyServerState(payload.initialGameState);
         }
 
