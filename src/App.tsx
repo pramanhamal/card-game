@@ -169,6 +169,8 @@ const App: React.FC = () => {
         // Otherwise, it's the initial game start
         if (state && state.round > 0) {
           console.log("New hand dealt - resetting isHandOver");
+          // Close the previous betting popup before showing new hand
+          setBetPopupOpen(false);
           applyServerStateNewHand(payload.initialGameState);
         } else {
           console.log("Initial game start");
