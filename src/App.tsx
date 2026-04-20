@@ -211,14 +211,16 @@ const App: React.FC = () => {
         // Notify server to deal next hand (for multiplayer)
         if (currentRoom) {
           socket?.emit("deal_next_hand", { roomId: currentRoom.id });
+          // For multiplayer, the start_game event handler will show the betting popup
+          // Don't show it here to avoid conflict with the popup shown in start_game handler
         } else {
-          // For singleplayer, deal locally
+          // For singleplayer, deal locally and show betting popup
           dealNextHand();
+          // Show betting popup for the new hand
+          setTimeout(() => {
+            setBetPopupOpen(true);
+          }, 1600); // Wait for game starting popup + delay
         }
-        // Show betting popup for the new hand
-        setTimeout(() => {
-          setBetPopupOpen(true);
-        }, 100);
       }, 2000);
       return () => clearTimeout(timer);
     }
