@@ -109,6 +109,7 @@ io.on("connection", (socket) => {
         aiPlayers: new Set(),
         aiTimers: {},
         hostSocketId: null,
+        roundNumber: 0,  // Track which round we're on (will be incremented to 1 when game starts)
       };
       rooms.set(roomId, room);
       console.log(`Created new matchmaking room: ${roomId}`);
@@ -184,6 +185,7 @@ io.on("connection", (socket) => {
       aiPlayers: new Set(),
       aiTimers: {},
       hostSocketId: socket.id,
+      roundNumber: 0,  // Track which round we're on
     };
     rooms.set(roomId, room);
 
@@ -228,6 +230,7 @@ io.on("connection", (socket) => {
       aiPlayers: new Set(["north", "east", "west"]),
       aiTimers: {},
       hostSocketId: socket.id,
+      roundNumber: 0,  // Track which round we're on
     };
     rooms.set(roomId, room);
     socket.join(roomId);
@@ -264,6 +267,7 @@ io.on("connection", (socket) => {
       aiPlayers: new Set(),
       aiTimers: {},
       hostSocketId: socket.id,
+      roundNumber: 0,  // Track which round we're on
     };
     rooms.set(roomId, room);
     socket.join(roomId);
@@ -343,6 +347,7 @@ io.on("connection", (socket) => {
         aiPlayers: new Set(),
         aiTimers: {},
         hostSocketId: null,
+        roundNumber: 0,  // Track which round we're on
       };
       rooms.set(roomId, room);
     }
@@ -469,8 +474,14 @@ io.on("connection", (socket) => {
 
     console.log("Dealing next hand for room:", roomId);
 
+    // Increment round number for the next hand
+    room.roundNumber = (room.roundNumber || 1) + 1;
+    console.log(`[Room ${roomId}] Dealing Round ${room.roundNumber}`);
+
     // Initialize new game state for the next hand
     room.gameState = initializeGame();
+    // Update the game state with the correct round number
+    room.gameState.round = room.roundNumber;
 
     // Get seating info for the new hand
     const seating = getSeatingInfo(room);
@@ -562,7 +573,13 @@ function startGameWithAI(room, io, roomId) {
     return; // Already started
   }
 
+  // Increment round number for this game start
+  room.roundNumber = (room.roundNumber || 0) + 1;
+  console.log(`[Room ${roomId}] Starting Round ${room.roundNumber}`);
+
   room.gameState = initializeGame();
+  // Update the game state with the correct round number
+  room.gameState.round = room.roundNumber;
   console.log("Game state initialized");
 
   // Add AI player info to seating
