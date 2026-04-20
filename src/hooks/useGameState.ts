@@ -55,9 +55,11 @@ export function useGameState(initial?: GameState) {
     setState((prev) => {
       if (!prev) return prev;
       const copy = structuredClone(prev) as GameState;
-      // Only mark hand as over if it hasn't been marked already
-      // This prevents multiple evaluations from triggering repeatedly
-      const isHandDone = Object.values(copy.hands).every((h) => h.length === 0);
+
+      // Check if all 13 tricks have been played by summing tricksWon
+      const totalTricksPlayed = Object.values(copy.tricksWon).reduce((sum, tricks) => sum + tricks, 0);
+      const isHandDone = totalTricksPlayed >= 13;
+
       if (isHandDone && !isHandOver) {
         setIsHandOver(true);
         const scores = calculateScores(copy.bids, copy.tricksWon);
