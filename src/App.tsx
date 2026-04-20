@@ -212,7 +212,10 @@ const App: React.FC = () => {
 
   // Auto-deal next hand after current hand completes
   useEffect(() => {
-    if (isHandOver && state && !isGameOver) {
+    // Check if game will be over after this round (only auto-deal if game continues)
+    const willGameEnd = gameHistory.length >= 2;
+
+    if (isHandOver && state && !isGameOver && !willGameEnd) {
       if (state.round >= 2) {
         console.log(`[Round ${state.round}] Auto-deal effect triggered! isHandOver=${isHandOver}, waiting 2 seconds...`);
       }
@@ -236,15 +239,20 @@ const App: React.FC = () => {
         }
       }, 2000);
       return () => clearTimeout(timer);
+    } else if (willGameEnd && isHandOver) {
+      console.log(`🎮 Game will end after this round - NOT setting up auto-deal`);
     }
-  }, [isHandOver, state, isGameOver, dealNextHand, socket, currentRoom]);
+  }, [isHandOver, state, isGameOver, dealNextHand, socket, currentRoom, gameHistory.length]);
 
   // End game after 2 rounds
   useEffect(() => {
-    console.log(`[Game Over Check] gameHistory.length: ${gameHistory.length}, isGameOver: ${isGameOver}`);
+    console.log(`🎯 [Game Over Check] gameHistory.length: ${gameHistory.length}, isGameOver: ${isGameOver}`);
+    console.log(`   Game history rounds:`, gameHistory.map((g, i) => `[${i}] gameId=${g.gameId}`));
     if (gameHistory.length >= 2 && !isGameOver) {
-      console.log("✅ GAME OVER! 2 rounds completed. Final scores:", totalScores);
+      console.log("✅✅✅ GAME OVER! 2 rounds completed. Final scores:", totalScores);
       endGame();
+    } else if (gameHistory.length >= 2) {
+      console.log("⚠️  Game history has 2+ items but isGameOver already true, skipping endGame");
     }
   }, [gameHistory.length, isGameOver, endGame, totalScores]);
 
@@ -310,6 +318,7 @@ const App: React.FC = () => {
   };
 
   const handleJoinMultiplayer = () => {
+    console.log("🔄 Joining multiplayer - resetting game");
     resetGame();
     setGameMode(null);
     setShowGameModeScreen(true);

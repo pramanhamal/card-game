@@ -69,11 +69,13 @@ export function useGameState(initial?: GameState) {
 
     const totalTricksPlayed = Object.values(state.tricksWon).reduce((sum, tricks) => sum + tricks, 0);
 
-    console.log(`[Hand Complete Check] Round: ${state.round}, Tricks: ${totalTricksPlayed}/13, completedRound: ${completedRound}, isHandOver: ${isHandOver}`);
+    if (totalTricksPlayed >= 10) {  // Only log when getting close to 13
+      console.log(`[Hand Complete Check] Round: ${state.round}, Tricks: ${totalTricksPlayed}/13, completedRound: ${completedRound}, history.length: ${history.length}`);
+    }
 
     // Only trigger if: (1) all 13 tricks played, (2) this round hasn't been marked complete yet
     if (totalTricksPlayed >= 13 && state.round !== completedRound) {
-      console.log(`✅ HAND COMPLETE! Round ${state.round} - Adding to history`);
+      console.log(`✅ HAND COMPLETE! Round ${state.round} - Adding to history. Current history length: ${history.length}`);
       setCompletedRound(state.round);
       setIsHandOver(true);
       const scores = calculateScores(state.bids, state.tricksWon);
@@ -88,11 +90,11 @@ export function useGameState(initial?: GameState) {
             totalScores: totalScores as Record<PlayerId, number>,
           },
         ];
-        console.log(`📊 History updated. New history length: ${newHistory.length}`);
+        console.log(`📊 History updated. New history length: ${newHistory.length}, gameId: ${state.round}`);
         return newHistory;
       });
     }
-  }, [state, isHandOver, completedRound, totalScores]);
+  }, [state, isHandOver, completedRound, totalScores, history]);
 
   const resetGame = useCallback(() => {
     startGame();
