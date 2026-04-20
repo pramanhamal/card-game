@@ -54,35 +54,38 @@ export function useGameState(initial?: GameState) {
   }, []);
 
   const evaluateAndAdvanceTrick = useCallback(() => {
+    // This callback is called when trick animations end
+    // The actual hand completion detection is handled by a useEffect below
+    // So we just need to update the state for visual purposes
     setState((prev) => {
       if (!prev) return prev;
-      const copy = structuredClone(prev) as GameState;
-
-      // Check if all 13 tricks have been played by summing tricksWon
-      const totalTricksPlayed = Object.values(copy.tricksWon).reduce((sum, tricks) => sum + tricks, 0);
-      const isHandDone = totalTricksPlayed >= 13;
-
-      // Only mark hand as over if:
-      // 1. All 13 tricks have been played
-      // 2. We haven't already marked this round as complete (checked by round number)
-      if (isHandDone && copy.round !== completedRound) {
-        setCompletedRound(copy.round);
-        setIsHandOver(true);
-        const scores = calculateScores(copy.bids, copy.tricksWon);
-        setHistory((h) => [
-          ...h,
-          {
-            gameId: copy.round,
-            bids: { ...copy.bids },
-            tricksWon: { ...copy.tricksWon },
-            scores,
-            totalScores: totalScores as Record<PlayerId, number>,
-          },
-        ]);
-      }
-      return copy;
+      return prev;
     });
-  }, [totalScores, completedRound]);
+  }, []);
+
+  // Detect when a hand is complete (13 tricks played) and only trigger once per round
+  useEffect(() => {
+    if (!state || isHandOver) return;
+
+    const totalTricksPlayed = Object.values(state.tricksWon).reduce((sum, tricks) => sum + tricks, 0);
+
+    // Only trigger if: (1) all 13 tricks played, (2) this round hasn't been marked complete yet
+    if (totalTricksPlayed >= 13 && state.round !== completedRound) {
+      setCompletedRound(state.round);
+      setIsHandOver(true);
+      const scores = calculateScores(state.bids, state.tricksWon);
+      setHistory((h) => [
+        ...h,
+        {
+          gameId: state.round,
+          bids: { ...state.bids },
+          tricksWon: { ...state.tricksWon },
+          scores,
+          totalScores: totalScores as Record<PlayerId, number>,
+        },
+      ]);
+    }
+  }, [state, isHandOver, completedRound, totalScores]);
 
   const resetGame = useCallback(() => {
     startGame();
