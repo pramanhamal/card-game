@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { io, Socket } from "socket.io-client";
 import { useGameState } from "./hooks/useGameState";
 import { Table } from "./components/Table";
@@ -12,7 +12,8 @@ import { GameModeScreen } from "./components/GameModeScreen";
 import { PrivateTableModal } from "./components/PrivateTableModal";
 import { WaitingRoom } from "./components/WaitingRoom";
 import { MultiplayerLobby } from "./components/MultiplayerLobby";
-import type { Card, PlayerId, GameState, GameMode } from "./types/spades";
+import type { Card, PlayerId, GameState } from "./types/spades";
+import { GameMode } from "./types/spades";
 import { legalMoves } from "./utils/gameLogic";
 import { SERVER_URL } from "./config";
 
@@ -67,6 +68,12 @@ const App: React.FC = () => {
     endGame,
   } = useGameState();
 
+  // Ref to track current game state for auto-play timer callback
+  const stateRef = useRef(state);
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+
   useEffect(() => {
     const sock = io(SERVER_URL, {
       path: "/socket.io",
@@ -92,11 +99,11 @@ const App: React.FC = () => {
     });
 
     sock.on("room_update", ({ roomId, players }: any) => {
-      console.log("=== ROOM_UPDATE RECEIVED ===", {
-        roomId,
-        players,
-        playersLength: players?.length,
-      });
+      console.log("\n=== ROOM_UPDATE RECEIVED ===");
+      console.log("Room ID:", roomId);
+      console.log("Players count:", players?.length);
+      console.log("Players:", players);
+
       const mappedPlayers = Array.isArray(players)
         ? players.map((p: any) => ({
             id: p.id,
@@ -104,11 +111,17 @@ const App: React.FC = () => {
             seat: p.seat,
           }))
         : [];
-      console.log("Setting currentRoom with:", { roomId, players: mappedPlayers });
+
+      console.log("Mapped players:", mappedPlayers);
+      console.log("Current room before update:", currentRoom);
+
       setCurrentRoom({
         id: roomId,
         players: mappedPlayers,
       });
+
+      console.log("Room updated, new players count:", mappedPlayers.length);
+      console.log("=== END ROOM_UPDATE ===\n");
     });
 
     sock.on("assigned_seat", ({ seat, roomId }: { seat: PlayerId; roomId: string }) => {
@@ -202,10 +215,28 @@ const App: React.FC = () => {
     );
 
     sock.on("game_state_update", (newState: GameState) => {
+      try {
+        const tricksCount = newState.tricksWon ? Object.values(newState.tricksWon).reduce((sum: number, tricks: number) => sum + tricks, 0) : 0;
+        console.log(`[GAME_STATE_UPDATE] Tricks played: ${tricksCount}/13, Current turn: ${newState.turn}, Trick: ${JSON.stringify(newState.trick)}`);
+      } catch (err) {
+        console.log("[GAME_STATE_UPDATE] Error logging state:", err);
+      }
       applyServerState(newState);
     });
 
+    // Pong handler for heartbeat
+    sock.on("pong", () => {
+      console.log("[PING] Received pong from server");
+    });
+
+    // Send ping to server every 10 seconds to keep connection alive
+    const pingInterval = setInterval(() => {
+      console.log("[PING] Sending ping to server");
+      sock.emit("ping");
+    }, 10000);
+
     return () => {
+      clearInterval(pingInterval);
       sock.disconnect();
     };
   }, [applyServerState]);
@@ -260,21 +291,42 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!state || !yourSeat || state.turn !== yourSeat) return;
 
-    // Get legal moves for current player
-    const legalMovesForPlayer = legalMoves(state, yourSeat);
-    if (legalMovesForPlayer.length === 0) return;
+    console.log(`⏱️ [AUTO-PLAY] Timer set for ${yourSeat}, state.turn: ${state.turn}`);
 
     const timer = setTimeout(() => {
-      console.log("Auto-playing card for:", yourSeat);
+      console.log(`⏱️ [AUTO-PLAY] Timer fired for ${yourSeat}`);
+
+      // Use stateRef to access CURRENT game state (not the stale state from when effect ran)
+      const currentState = stateRef.current;
+      console.log(`⏱️ [AUTO-PLAY] Current state turn: ${currentState?.turn}, yourSeat: ${yourSeat}`);
+
+      if (!currentState || currentState.turn !== yourSeat) {
+        console.log(`⏱️ [AUTO-PLAY] ❌ Cancelled: turn changed (${currentState?.turn} !== ${yourSeat}) or state invalid`);
+        return;
+      }
+
+      const legalMovesForPlayer = legalMoves(currentState, yourSeat);
+      console.log(`⏱️ [AUTO-PLAY] Legal moves available: ${legalMovesForPlayer.length}`);
+
+      if (legalMovesForPlayer.length === 0) {
+        console.log(`⏱️ [AUTO-PLAY] ❌ Cancelled: no legal moves`);
+        return;
+      }
+
+      console.log(`⏱️ [AUTO-PLAY] ✅ Playing card for ${yourSeat}`);
       // Auto-play the lowest card (simple strategy)
       const cardValues: Record<string, number> = { A: 14, K: 13, Q: 12, J: 11, "10": 10, "9": 9, "8": 8, "7": 7, "6": 6, "5": 5, "4": 4, "3": 3, "2": 2 };
       const sortedCards = [...legalMovesForPlayer].sort((a, b) => (cardValues[a.rank as string] || 0) - (cardValues[b.rank as string] || 0));
       const cardToPlay = sortedCards[0];
+      console.log(`⏱️ [AUTO-PLAY] Card to play: ${cardToPlay.rank}${cardToPlay.suit}`);
       handlePlayCard(yourSeat, cardToPlay);
     }, 1000);
 
-    return () => clearTimeout(timer);
-  }, [state, yourSeat, currentRoom]);
+    return () => {
+      console.log(`⏱️ [AUTO-PLAY] Timer cleared for ${yourSeat}`);
+      clearTimeout(timer);
+    };
+  }, [state?.turn, yourSeat]);
 
   const handleNameSubmit = (name: string) => {
     setPlayerName(name);
@@ -300,8 +352,17 @@ const App: React.FC = () => {
   };
 
   const handlePlayCard = (player: PlayerId, card: Card) => {
-    if (!currentRoom || !yourSeat) return;
-    socket?.emit("play_card", {
+    console.log(`🎴 [PLAY_CARD] Attempting to play ${card.rank}${card.suit} for ${player}`);
+    if (!currentRoom) {
+      console.log(`🎴 [PLAY_CARD] ❌ No room: currentRoom = ${currentRoom}`);
+      return;
+    }
+    if (!socket) {
+      console.log(`🎴 [PLAY_CARD] ❌ No socket connection`);
+      return;
+    }
+    console.log(`🎴 [PLAY_CARD] ✅ Emitting play_card to room ${currentRoom.id}`);
+    socket.emit("play_card", {
       roomId: currentRoom.id,
       card,
     });
@@ -313,8 +374,12 @@ const App: React.FC = () => {
   };
 
   const handlePlayAgain = () => {
+    console.log("🔄 Play Again - joining multiplayer lobby");
     resetGame();
-    setBetPopupOpen(true);
+    setCurrentRoom(null);  // Clear current room so waiting room shows
+    setYourSeat(null);     // Clear seat so we wait for assignment
+    setGameMode(GameMode.MULTIPLAYER);
+    socket?.emit("join_multiplayer_queue");
   };
 
   const handleJoinMultiplayer = () => {
@@ -366,6 +431,8 @@ const App: React.FC = () => {
   };
 
   const handleLeaveRoom = () => {
+    console.log("🚪 Leaving room - notifying server");
+    socket?.emit("leave_room");
     setCurrentRoom(null);
     setCurrentRoomMode(null);
     setYourSeat(null);
@@ -413,7 +480,8 @@ const App: React.FC = () => {
   });
 
   // ** GAME TABLE: Show when game has started (highest priority) **
-  if (state && currentRoom && yourSeat && !isGameOver) {
+  // Also show when game is over so the GameOverPopup can display
+  if (state && currentRoom && yourSeat) {
     console.log("✓✓✓ Rendering TABLE - all conditions met! yourSeat:", yourSeat);
     return (
       <div className="fixed inset-0 bg-teal-800 overflow-hidden">
@@ -470,7 +538,6 @@ const App: React.FC = () => {
               seatingNames={seatingNames}
               gameHistory={gameHistory}
               onPlayAgain={handlePlayAgain}
-              onJoinMultiplayer={handleJoinMultiplayer}
             />
           </>
         )}

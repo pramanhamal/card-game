@@ -9,6 +9,7 @@ import {
   legalMoves,
   generateAIBid,
   generateAICardPlay,
+  evaluateTrick,
 } from "./utils/gameLogic.js";
 
 const app = express();
@@ -16,7 +17,13 @@ const httpServer = http.createServer(app);
 const io = new Server(httpServer, {
   path: "/socket.io",
   cors: {
-    origin: ["https://callbreak-hxwr.onrender.com"],
+    origin: [
+      "https://callbreak-hxwr.onrender.com",
+      "http://localhost:5173",
+      "http://localhost:5174",
+      "http://127.0.0.1:5173",
+      "http://127.0.0.1:5174"
+    ],
     methods: ["GET", "POST"],
     credentials: true,
   },
@@ -72,10 +79,46 @@ function getSeatingInfo(room) {
 
 io.on("connection", (socket) => {
   socket.data.name = `Anon-${socket.id.slice(0, 4)}`;
+  socket.data.lastPing = Date.now();
   broadcastLobby();
+
+  console.log(`[CONNECTION] Player connected: ${socket.id}`);
 
   socket.on("set_player_name", (name) => {
     socket.data.name = name;
+  });
+
+  // Heartbeat/ping handler to keep connection alive and detect stale connections
+  socket.on("ping", () => {
+    socket.data.lastPing = Date.now();
+    socket.emit("pong");
+  });
+
+  // Explicit leave room handler
+  socket.on("leave_room", () => {
+    console.log(`[LEAVE_ROOM] Player ${socket.id} leaving room`);
+    for (const [roomId, room] of rooms.entries()) {
+      if (room.players.has(socket.id)) {
+        room.players.delete(socket.id);
+        console.log(`[LEAVE_ROOM] Removed from room ${roomId}`);
+
+        const playersList = Array.from(room.players.values()).map((p) => ({
+          id: p.socketId,
+          name: p.name,
+          seat: p.seat,
+        }));
+
+        io.to(roomId).emit("room_update", { roomId, players: playersList });
+
+        if (room.players.size === 0) {
+          rooms.delete(roomId);
+          console.log(`[LEAVE_ROOM] Room ${roomId} is empty, deleted`);
+        }
+
+        broadcastLobby();
+        break;
+      }
+    }
   });
 
   socket.on("join_multiplayer_queue", () => {
@@ -509,21 +552,70 @@ io.on("connection", (socket) => {
   });
 
   socket.on("play_card", ({ roomId, card }) => {
+    console.log(`\n[PLAY_CARD] ${socket.id} playing ${card.rank}${card.suit}`);
+
     const room = rooms.get(roomId);
-    if (!room || !room.gameState) return;
+    if (!room) {
+      console.log("[PLAY_CARD] Room not found");
+      return;
+    }
+    if (!room.gameState) {
+      console.log("[PLAY_CARD] Game state not found");
+      return;
+    }
+
     const player = room.players.get(socket.id);
-    if (!player || !player.seat) return;
+    if (!player) {
+      console.log("[PLAY_CARD] Player not found");
+      return;
+    }
+    if (!player.seat) {
+      console.log("[PLAY_CARD] Player seat not assigned");
+      return;
+    }
+
+    console.log(`[PLAY_CARD] Current turn: ${room.gameState.turn}, Player seat: ${player.seat}`);
+    const tricksCount = room.gameState.tricksPlayed ? Object.values(room.gameState.tricksPlayed).flat().length : 0;
+    console.log(`[PLAY_CARD] Tricks played: ${tricksCount}`);
 
     const allowed = legalMoves(room.gameState, player.seat);
+    console.log(`[PLAY_CARD] Legal moves: ${allowed.length}, Trying: ${card.rank}${card.suit}`);
+
     const isLegal = allowed.some((c) => c.suit === card.suit && c.rank === card.rank);
-    if (!isLegal) return;
+    if (!isLegal) {
+      console.log("[PLAY_CARD] Card is not legal!");
+      return;
+    }
 
-    playCard(room.gameState, player.seat, card);
-    io.to(roomId).emit("game_state_update", room.gameState);
+    try {
+      playCard(room.gameState, player.seat, card);
+      console.log(`[PLAY_CARD] Card played successfully.`);
 
-    // Schedule next AI action if needed
-    if (room.aiPlayers.size > 0) {
-      scheduleNextAIAction(room, io, roomId, "play");
+      // Check if trick is complete (all 4 players have played)
+      const trickCards = Object.values(room.gameState.trick).filter(c => c !== null);
+      console.log(`[PLAY_CARD] Cards in trick: ${trickCards.length}/4`);
+
+      if (trickCards.length === 4) {
+        console.log("[PLAY_CARD] Trick is complete! Evaluating...");
+        try {
+          const winner = evaluateTrick(room.gameState);
+          console.log(`[PLAY_CARD] Trick winner: ${winner}, tricks: ${room.gameState.tricksWon[winner]}`);
+        } catch (error) {
+          console.error("[PLAY_CARD] Error evaluating trick:", error);
+        }
+      }
+
+      console.log(`[PLAY_CARD] Current turn: ${room.gameState.turn}`);
+      io.to(roomId).emit("game_state_update", room.gameState);
+      console.log("[PLAY_CARD] Game state update sent");
+
+      // Schedule next AI action if needed
+      if (room.aiPlayers.size > 0) {
+        console.log(`[PLAY_CARD] Scheduling AI action (${room.aiPlayers.size} AI players)`);
+        scheduleNextAIAction(room, io, roomId, "play");
+      }
+    } catch (error) {
+      console.error("[PLAY_CARD] Error playing card:", error);
     }
   });
 
@@ -535,9 +627,20 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
+    console.log(`\n=== PLAYER DISCONNECT ===`);
+    console.log(`Socket ID: ${socket.id}`);
+    console.log(`Total rooms: ${rooms.size}`);
+
     for (const [roomId, room] of rooms.entries()) {
       if (room.players.has(socket.id)) {
+        console.log(`Found player in room: ${roomId}`);
+        console.log(`Players before delete: ${room.players.size}`);
+
+        const disconnectedPlayer = room.players.get(socket.id);
         room.players.delete(socket.id);
+
+        console.log(`Players after delete: ${room.players.size}`);
+        console.log(`Disconnected player: ${disconnectedPlayer?.name}`);
 
         // Clean up AI timers
         if (room.aiTimers) {
@@ -545,23 +648,100 @@ io.on("connection", (socket) => {
           room.aiTimers = {};
         }
 
+        // Build updated player list
         const playersList = Array.from(room.players.values()).map((p) => ({
           id: p.socketId,
           name: p.name,
           seat: p.seat,
         }));
+
+        console.log(`Broadcasting room_update to ${roomId} with ${playersList.length} players`);
+
+        // Send update to remaining players in the room
         io.to(roomId).emit("room_update", { roomId, players: playersList });
+
+        // If room is now empty, delete it
         if (room.players.size === 0) {
+          console.log(`Room ${roomId} is now empty, deleting room`);
           rooms.delete(roomId);
         } else {
+          // Reset game state if player disconnects mid-game
           room.gameState = null;
         }
+
+        // Broadcast updated lobby to all clients
         broadcastLobby();
+        console.log(`=== END DISCONNECT ===\n`);
         break;
       }
     }
   });
 });
+
+// Periodic cleanup: Remove stale connections and orphaned players
+setInterval(() => {
+  const now = Date.now();
+  const STALE_TIMEOUT = 20000; // 20 seconds
+  const connectedSocketIds = new Set(io.sockets.sockets.keys());
+
+  console.log(`\n[CLEANUP] Starting cleanup. Connected sockets: ${connectedSocketIds.size}`);
+
+  // 1. Check all connected sockets for inactivity
+  io.sockets.sockets.forEach((socket) => {
+    const lastPing = socket.data.lastPing || now;
+    const timeSinceLastPing = now - lastPing;
+
+    if (timeSinceLastPing > STALE_TIMEOUT) {
+      console.log(
+        `[CLEANUP] Removing stale connection: ${socket.id} (inactive for ${Math.round(timeSinceLastPing / 1000)}s)`
+      );
+      socket.disconnect(true);
+    }
+  });
+
+  // 2. Remove orphaned players from rooms (socket exists in room but not connected)
+  for (const [roomId, room] of rooms.entries()) {
+    const playersToRemove = [];
+
+    // Find players whose sockets are no longer connected
+    room.players.forEach((player, socketId) => {
+      if (!connectedSocketIds.has(socketId)) {
+        console.log(
+          `[CLEANUP] Found orphaned player in room ${roomId}: ${socketId} (${player.name})`
+        );
+        playersToRemove.push(socketId);
+      }
+    });
+
+    // Remove orphaned players
+    if (playersToRemove.length > 0) {
+      playersToRemove.forEach((socketId) => {
+        room.players.delete(socketId);
+      });
+
+      // Notify remaining players
+      const playersList = Array.from(room.players.values()).map((p) => ({
+        id: p.socketId,
+        name: p.name,
+        seat: p.seat,
+      }));
+
+      console.log(
+        `[CLEANUP] Removed ${playersToRemove.length} orphaned players from ${roomId}. ${playersList.length} remain.`
+      );
+      io.to(roomId).emit("room_update", { roomId, players: playersList });
+    }
+
+    // Delete empty rooms
+    if (room.players.size === 0) {
+      console.log(`[CLEANUP] Deleting empty room: ${roomId}`);
+      rooms.delete(roomId);
+    }
+  }
+
+  console.log(`[CLEANUP] Cleanup complete. Rooms: ${rooms.size}\n`);
+  broadcastLobby();
+}, 10000); // Run cleanup every 10 seconds
 
 // Helper function to start a game with AI bots
 function startGameWithAI(room, io, roomId) {

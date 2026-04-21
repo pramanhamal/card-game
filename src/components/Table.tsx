@@ -1,6 +1,6 @@
 // src/components/Table.tsx
 import React, { useState, useEffect, useRef } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import type { GameState, PlayerId, Card as CardType } from "../types/spades";
 import { Opponent } from "./Opponent";
 import { Card } from "./Card";
@@ -269,7 +269,7 @@ export const Table: React.FC<TableProps> = ({
           {nameMap[you]}{isActive ? " — Your Turn" : ""}
         </div>
 
-        <AnimatePresence>
+        <div>
           {sortedHand.map((c, i) => {
             const total = sortedHand.length;
             const spread = Math.min(72, total * 5.5);
@@ -280,18 +280,10 @@ export const Table: React.FC<TableProps> = ({
             const translateY = canPlay ? -108 : -84;
 
             return (
-              <motion.div
+              <div
                 key={key}
                 className="absolute"
-                initial={{ y: 80, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                exit={{ y: -60, opacity: 0, transition: { duration: 0.18, ease: "easeIn" } }}
-                transition={{
-                  type: "spring",
-                  stiffness: 380,
-                  damping: 30,
-                  delay: i * 0.025,
-                }}
+                style={{ opacity: 1 }}
               >
                 <div
                   className="transition-all duration-250 ease-out"
@@ -323,10 +315,10 @@ export const Table: React.FC<TableProps> = ({
                     <Card card={c} faceUp />
                   </div>
                 </div>
-              </motion.div>
+              </div>
             );
           })}
-        </AnimatePresence>
+        </div>
       </div>
     </div>
   );

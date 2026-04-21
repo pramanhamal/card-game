@@ -7,7 +7,6 @@ interface Props {
   seatingNames: Record<PlayerId, string>;
   gameHistory: GameResult[];
   onPlayAgain: () => void;
-  onJoinMultiplayer: () => void;
 }
 
 const SEAT_ORDER: PlayerId[] = ["north", "east", "south", "west"];
@@ -18,7 +17,6 @@ export const GameOverPopup: React.FC<Props> = ({
   seatingNames,
   gameHistory,
   onPlayAgain,
-  onJoinMultiplayer
 }) => {
   const sorted = [...SEAT_ORDER].sort(
     (a, b) => totalScores[b] - totalScores[a]
@@ -145,35 +143,20 @@ export const GameOverPopup: React.FC<Props> = ({
           </div>
         )}
 
-        {/* Buttons */}
-        <div className="flex gap-3">
-          <motion.button
-            whileHover={{ scale: 1.04 }}
-            whileTap={{ scale: 0.97 }}
-            onClick={onPlayAgain}
-            className="flex-1 py-3 rounded-xl font-bold text-sm tracking-wide"
-            style={{
-              background: "linear-gradient(90deg, #16a34a, #15803d)",
-              color: "white",
-              boxShadow: "0 4px 16px rgba(22,163,74,0.35)",
-            }}
-          >
-            Play Again
-          </motion.button>
-          <motion.button
-            whileHover={{ scale: 1.04 }}
-            whileTap={{ scale: 0.97 }}
-            onClick={onJoinMultiplayer}
-            className="flex-1 py-3 rounded-xl font-bold text-sm tracking-wide"
-            style={{
-              background: "linear-gradient(90deg, #2563eb, #1d4ed8)",
-              color: "white",
-              boxShadow: "0 4px 16px rgba(37,99,235,0.35)",
-            }}
-          >
-            Join Multiplayer
-          </motion.button>
-        </div>
+        {/* Button */}
+        <motion.button
+          whileHover={{ scale: 1.04 }}
+          whileTap={{ scale: 0.97 }}
+          onClick={onPlayAgain}
+          className="w-full py-3 rounded-xl font-bold text-sm tracking-wide"
+          style={{
+            background: "linear-gradient(90deg, #16a34a, #15803d)",
+            color: "white",
+            boxShadow: "0 4px 16px rgba(22,163,74,0.35)",
+          }}
+        >
+          Play Again
+        </motion.button>
       </motion.div>
     </motion.div>
   );
