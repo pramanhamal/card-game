@@ -12,6 +12,7 @@ interface OpponentProps {
   position: OpponentPosition;
   isAI?: boolean;
   isCurrentTurn?: boolean;
+  bid?: number | null;
 }
 
 export const Opponent: React.FC<OpponentProps> = ({
@@ -21,6 +22,7 @@ export const Opponent: React.FC<OpponentProps> = ({
   position,
   isAI = false,
   isCurrentTurn = false,
+  bid = null,
 }) => {
   const posClasses: Record<OpponentPosition, string> = {
     north: "absolute top-3 left-1/2 -translate-x-1/2",
@@ -139,7 +141,7 @@ export const Opponent: React.FC<OpponentProps> = ({
           className="text-xs ml-1"
           style={{ color: "rgba(255,255,255,0.55)" }}
         >
-          {tricks}✦
+          {tricks}{bid !== null ? `/${bid}` : ""}✦
         </span>
       </div>
     </div>

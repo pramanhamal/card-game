@@ -84,106 +84,148 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
   const hasJoinedRoom = !!(currentRoom && currentRoom.id && currentRoom.players && Array.isArray(currentRoom.players));
 
   if (hasJoinedRoom) {
-    const seatMap = getSeatMap(currentRoom!);
-    const filledSeats = currentRoom!.players.length;
-
-    console.log("Rendering VISUAL ROOM with currentRoom:", currentRoom);
+    const players = currentRoom!.players;
+    const filledSeats = players.length;
+    const slots: (Player | null)[] = [
+      players[0] || null,
+      players[1] || null,
+      players[2] || null,
+      players[3] || null,
+    ];
 
     return (
       <motion.div
-        className="multiplayer-lobby-container"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          minHeight: "100vh",
+          gap: "2rem",
+          background: "radial-gradient(ellipse at 50% 40%, #5a3a8a 0%, #3b1f6b 40%, #1e0f3d 100%)",
+        }}
       >
-        <div className="lobby-header">
-          <h1>🎴 Multiplayer Lobby</h1>
-          <p className="room-info">Room: {currentRoom!.id}</p>
-        </div>
+        {/* Header */}
+        <motion.div
+          initial={{ opacity: 0, y: -16 }}
+          animate={{ opacity: 1, y: 0 }}
+          style={{ textAlign: "center" }}
+        >
+          <div style={{ fontSize: "2.5rem", marginBottom: "0.25rem" }}>♠</div>
+          <h1 style={{ color: "white", fontSize: "1.8rem", fontWeight: 900, letterSpacing: "0.15em", margin: 0 }}>
+            SPADES
+          </h1>
+          <p style={{ color: "rgba(255,255,255,0.4)", fontSize: "0.8rem", marginTop: "0.25rem" }}>
+            Waiting for players…
+          </p>
+        </motion.div>
 
-        <div className="room-table-container">
-          <div className="room-visualization">
-            {/* Center table */}
-            <div className="table-center">
-              <div className="card-deck">🎴</div>
-              <div className="player-count-badge">
-                {filledSeats}
-                <span>/4</span>
-              </div>
-            </div>
-
-            {/* 4 Player Seats */}
-            {SEATS.map((seat, idx) => (
+        {/* 4 horizontal player slots */}
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "1.25rem",
+          }}
+        >
+          {slots.map((player, idx) => {
+            const isYou = player?.seat === yourSeat || player?.id === currentRoom!.players.find(p => p.seat === yourSeat)?.id;
+            return (
               <motion.div
-                key={seat}
-                className={`seat-position ${seat}`}
-                style={SEAT_POSITIONS[seat]}
-                initial={{ scale: 0.8, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={{ delay: idx * 0.1 }}
+                key={idx}
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: "0.5rem",
+                  width: 80,
+                }}
               >
-                <AnimatePresence>
-                  {seatMap[seat] ? (
+                <AnimatePresence mode="wait">
+                  {player ? (
                     <motion.div
-                      className={`player-slot filled ${
-                        yourSeat === seat ? "your-seat" : ""
-                      }`}
-                      initial={{ scale: 0.8, rotate: -10 }}
-                      animate={{ scale: 1, rotate: 0 }}
-                      exit={{ scale: 0.8, rotate: -10 }}
-                      transition={{ type: "spring", stiffness: 200 }}
+                      key={player.id}
+                      initial={{ opacity: 0, scale: 0.5, y: 16 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.5 }}
+                      transition={{ type: "spring", stiffness: 260, damping: 20 }}
+                      style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.5rem" }}
                     >
-                      <div className="player-avatar">👤</div>
-                      <div className="player-details">
-                        <div className="player-name">
-                          {seatMap[seat]!.name}
-                        </div>
-                        <div className="seat-label">
-                          {seat.toUpperCase()}
-                        </div>
+                      <div style={{
+                        width: 68, height: 68, borderRadius: "50%",
+                        background: isYou
+                          ? "linear-gradient(135deg, #4a3000, #8a6000)"
+                          : "linear-gradient(135deg, #2a2a4a, #1a1a3a)",
+                        border: isYou ? "2px solid rgba(255,210,40,0.8)" : "2px solid rgba(255,255,255,0.2)",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        fontSize: "1.6rem", fontWeight: 900, color: isYou ? "#ffd700" : "rgba(255,255,255,0.85)",
+                        boxShadow: isYou ? "0 0 18px rgba(255,210,40,0.5)" : "0 2px 8px rgba(0,0,0,0.5)",
+                      }}>
+                        {player.name?.[0]?.toUpperCase() ?? "?"}
                       </div>
-                      {yourSeat === seat && (
-                        <div className="you-indicator">YOU</div>
+                      <div style={{ color: isYou ? "#ffd700" : "white", fontWeight: 700, fontSize: "0.8rem", textAlign: "center", maxWidth: 76, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {player.name}
+                      </div>
+                      {isYou && (
+                        <div style={{ background: "rgba(255,210,40,0.15)", color: "#ffd700", fontSize: "0.6rem", fontWeight: 700, padding: "2px 8px", borderRadius: 999, border: "1px solid rgba(255,210,40,0.4)", letterSpacing: "0.1em" }}>
+                          YOU
+                        </div>
                       )}
                     </motion.div>
                   ) : (
                     <motion.div
-                      className="player-slot empty"
-                      initial={{ scale: 0.8 }}
-                      animate={{ scale: 1 }}
-                      exit={{ scale: 0.8 }}
+                      key={`empty-${idx}`}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.5rem" }}
                     >
-                      <div className="empty-seat-icon">+</div>
-                      <div className="empty-seat-label">
-                        {seat.toUpperCase()}
+                      <motion.div
+                        animate={{ opacity: [0.4, 0.7, 0.4] }}
+                        transition={{ duration: 1.8, repeat: Infinity, delay: idx * 0.3 }}
+                        style={{
+                          width: 68, height: 68, borderRadius: "50%",
+                          background: "rgba(255,255,255,0.04)",
+                          border: "2px dashed rgba(255,255,255,0.2)",
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          fontSize: "1.4rem", color: "rgba(255,255,255,0.25)",
+                        }}
+                      >
+                        ?
+                      </motion.div>
+                      <div style={{ color: "rgba(255,255,255,0.35)", fontSize: "0.75rem", fontWeight: 500 }}>
+                        Waiting…
                       </div>
-                      <div className="waiting-text">Waiting...</div>
                     </motion.div>
                   )}
                 </AnimatePresence>
               </motion.div>
-            ))}
-          </div>
+            );
+          })}
         </div>
 
-        {/* Status and Actions */}
-        <div className="lobby-status">
-          {filledSeats === 4 && (
+        {/* Status */}
+        <motion.div style={{ textAlign: "center" }}>
+          {filledSeats === 4 ? (
             <motion.div
-              className="auto-start-message"
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
+              style={{ color: "#4ade80", fontWeight: 700, fontSize: "1.1rem", display: "flex", alignItems: "center", gap: "0.5rem" }}
             >
-              <span className="pulse-dot">●</span>
-              Starting game...
+              <motion.span animate={{ opacity: [1, 0.3, 1] }} transition={{ duration: 1, repeat: Infinity }}>●</motion.span>
+              All players in — starting game…
             </motion.div>
-          )}
-          {filledSeats < 4 && (
-            <p className="waiting-message">
-              Waiting for {4 - filledSeats} more player{filledSeats === 3 ? "" : "s"}...
+          ) : (
+            <p style={{ color: "rgba(255,255,255,0.45)", fontSize: "0.9rem", margin: 0 }}>
+              {filledSeats} / 4 players joined
             </p>
           )}
-        </div>
+        </motion.div>
 
         {/* Leave Button */}
         <motion.button
@@ -192,7 +234,7 @@ export const MultiplayerLobby: React.FC<MultiplayerLobbyProps> = ({
           whileTap={{ scale: 0.95 }}
           onClick={onLeaveRoom}
         >
-          ← Leave Room
+          ← Leave
         </motion.button>
       </motion.div>
     );

@@ -100,6 +100,14 @@ export function useGameState(initial?: GameState) {
     startGame();
   }, [startGame]);
 
+  const clearGame = useCallback(() => {
+    setState(null);
+    setIsHandOver(false);
+    setIsGameOver(false);
+    setCompletedRound(-1);
+    setHistory([]);
+  }, []);
+
   // Automatically deal new hand after current hand ends
   // NOTE: This should NOT clear history - we need to preserve previous rounds
   const dealNextHand = useCallback(() => {
@@ -138,5 +146,6 @@ export function useGameState(initial?: GameState) {
     applyServerState,
     applyServerStateNewHand,
     endGame,
+    clearGame,
   };
 }

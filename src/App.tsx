@@ -66,10 +66,13 @@ const App: React.FC = () => {
     applyServerState,
     applyServerStateNewHand,
     endGame,
+    clearGame,
   } = useGameState();
 
   // Ref to track current game state for auto-play timer callback
   const stateRef = useRef(state);
+  // Guard to block stale room_update events during room transitions
+  const leavingRoomRef = useRef(false);
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
@@ -99,38 +102,28 @@ const App: React.FC = () => {
     });
 
     sock.on("room_update", ({ roomId, players }: any) => {
+      if (leavingRoomRef.current) {
+        console.log(`[ROOM_UPDATE] Ignored — mid-transition`);
+        return;
+      }
       console.log("\n=== ROOM_UPDATE RECEIVED ===");
-      console.log("Room ID:", roomId);
-      console.log("Players count:", players?.length);
-      console.log("Players:", players);
+      console.log("Room ID:", roomId, "Players count:", players?.length);
 
       const mappedPlayers = Array.isArray(players)
-        ? players.map((p: any) => ({
-            id: p.id,
-            name: p.name,
-            seat: p.seat,
-          }))
+        ? players.map((p: any) => ({ id: p.id, name: p.name, seat: p.seat }))
         : [];
 
-      console.log("Mapped players:", mappedPlayers);
-      console.log("Current room before update:", currentRoom);
-
-      setCurrentRoom({
-        id: roomId,
-        players: mappedPlayers,
+      setCurrentRoom((prev) => {
+        if (prev && prev.id !== roomId) return prev;
+        return { id: roomId, players: mappedPlayers };
       });
-
-      console.log("Room updated, new players count:", mappedPlayers.length);
-      console.log("=== END ROOM_UPDATE ===\n");
     });
 
     sock.on("assigned_seat", ({ seat, roomId }: { seat: PlayerId; roomId: string }) => {
       console.log("=== ASSIGNED_SEAT RECEIVED ===", { seat, roomId });
+      leavingRoomRef.current = false;
       setYourSeat(seat);
-      // Determine if user is host (first player in the room)
-      // This is a simple check - in a real app, server should tell us
       setIsHost(seat === "north");
-      console.log("Set yourSeat to:", seat);
     });
 
     sock.on(
@@ -213,6 +206,12 @@ const App: React.FC = () => {
         }, 1500);
       }
     );
+
+    sock.on("bidding_complete", ({ gameState }: { gameState: GameState }) => {
+      console.log("[BIDDING_COMPLETE] All players have bid");
+      applyServerState(gameState);
+      setBetPopupOpen(false);
+    });
 
     sock.on("game_state_update", (newState: GameState) => {
       try {
@@ -374,11 +373,14 @@ const App: React.FC = () => {
   };
 
   const handlePlayAgain = () => {
-    console.log("🔄 Play Again - joining multiplayer lobby");
-    resetGame();
-    setCurrentRoom(null);  // Clear current room so waiting room shows
-    setYourSeat(null);     // Clear seat so we wait for assignment
+    console.log("🔄 Play Again - leaving current room and joining multiplayer queue");
+    leavingRoomRef.current = true;
+    socket?.emit("leave_room");
+    clearGame();
+    setCurrentRoom(null);
+    setYourSeat(null);
     setGameMode(GameMode.MULTIPLAYER);
+    setCurrentRoomMode(GameMode.MULTIPLAYER);
     socket?.emit("join_multiplayer_queue");
   };
 
@@ -484,22 +486,7 @@ const App: React.FC = () => {
   if (state && currentRoom && yourSeat) {
     console.log("✓✓✓ Rendering TABLE - all conditions met! yourSeat:", yourSeat);
     return (
-      <div className="fixed inset-0 bg-teal-800 overflow-hidden">
-        {/* Your seat indicator */}
-        <div className="absolute top-2 left-2 text-white px-2 py-1 bg-gray-800 rounded">
-          You are: {yourSeat.toUpperCase()}
-        </div>
-
-        {/* Seating names */}
-        <div className="absolute top-2 right-2 bg-black bg-opacity-50 text-white px-3 py-2 rounded flex gap-2 text-sm">
-          {(["north", "east", "south", "west"] as PlayerId[]).map((p) => (
-            <div key={p}>
-              {p.toUpperCase()}: {seatingNames[p]}
-              {yourSeat === p ? " (You)" : ""}
-            </div>
-          ))}
-        </div>
-
+      <div className="fixed inset-0 overflow-hidden">
         <Table
           state={state}
           playCard={handlePlayCard}
@@ -531,15 +518,12 @@ const App: React.FC = () => {
         )}
 
         {isGameOver && (
-          <>
-            {console.log("🎮 RENDERING GAME OVER POPUP - isGameOver:", isGameOver)}
-            <GameOverPopup
-              totalScores={totalScores!}
-              seatingNames={seatingNames}
-              gameHistory={gameHistory}
-              onPlayAgain={handlePlayAgain}
-            />
-          </>
+          <GameOverPopup
+            totalScores={totalScores!}
+            seatingNames={seatingNames}
+            gameHistory={gameHistory}
+            onPlayAgain={handlePlayAgain}
+          />
         )}
 
         <div className="absolute top-4 right-4 z-20 flex items-center space-x-2">
@@ -556,23 +540,6 @@ const App: React.FC = () => {
             New Game
           </button>
         </div>
-
-        {!betPopupOpen && !isGameOver && (
-          <>
-            <div className="absolute top-4 left-4 bg-black bg-opacity-50 text-white px-3 py-1 rounded">
-              <span className="font-semibold">Your Bid:</span>{" "}
-              {state.bids[yourSeat]}
-            </div>
-            <div className="absolute bottom-4 right-4 z-20">
-              <Scoreboard
-                bids={state.bids}
-                tricksWon={state.tricksWon}
-                nameMap={seatingNames}
-                yourSeat={yourSeat}
-              />
-            </div>
-          </>
-        )}
       </div>
     );
   }

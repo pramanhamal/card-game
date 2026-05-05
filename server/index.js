@@ -86,6 +86,16 @@ io.on("connection", (socket) => {
 
   socket.on("set_player_name", (name) => {
     socket.data.name = name;
+    for (const [roomId, room] of rooms.entries()) {
+      const player = room.players.get(socket.id);
+      if (player) {
+        player.name = name;
+        const playersList = Array.from(room.players.values()).map((p) => ({
+          id: p.socketId, name: p.name, seat: p.seat,
+        }));
+        io.to(roomId).emit("room_update", { roomId, players: playersList });
+      }
+    }
   });
 
   // Heartbeat/ping handler to keep connection alive and detect stale connections
@@ -100,7 +110,8 @@ io.on("connection", (socket) => {
     for (const [roomId, room] of rooms.entries()) {
       if (room.players.has(socket.id)) {
         room.players.delete(socket.id);
-        console.log(`[LEAVE_ROOM] Removed from room ${roomId}`);
+        socket.leave(roomId);
+        console.log(`[LEAVE_ROOM] Removed from room ${roomId} and unsubscribed socket`);
 
         const playersList = Array.from(room.players.values()).map((p) => ({
           id: p.socketId,
@@ -500,13 +511,17 @@ io.on("connection", (socket) => {
     if (!room || !room.gameState) return;
     const player = room.players.get(socket.id);
     if (!player || !player.seat) return;
+
     room.gameState.bids[player.seat] = bid;
     io.to(roomId).emit("game_state_update", room.gameState);
 
-    // Check if all players have bid
-    const allBidded = Object.values(room.gameState.bids).every((b) => b !== undefined && b !== 0 || room.gameState.bids[room.gameState.turn] !== undefined);
-    if (allBidded && room.aiPlayers.size > 0) {
-      // Schedule next AI bid if needed
+    const allBidded = SEAT_ORDER.every((seat) => room.gameState.bids[seat] !== undefined);
+    if (allBidded) {
+      io.to(roomId).emit("bidding_complete", { gameState: room.gameState });
+      if (room.aiPlayers.has(room.gameState.turn)) {
+        scheduleNextAIAction(room, io, roomId, "play");
+      }
+    } else if (room.aiPlayers.size > 0) {
       scheduleNextAIAction(room, io, roomId, "bid");
     }
   });
@@ -515,39 +530,46 @@ io.on("connection", (socket) => {
     const room = rooms.get(roomId);
     if (!room) return;
 
-    console.log("Dealing next hand for room:", roomId);
+    const nextRound = (room.roundNumber || 1) + 1;
 
-    // Increment round number for the next hand
-    room.roundNumber = (room.roundNumber || 1) + 1;
-    console.log(`[Room ${roomId}] Dealing Round ${room.roundNumber}`);
-
-    // Initialize new game state for the next hand
-    room.gameState = initializeGame();
-    // Update the game state with the correct round number
-    room.gameState.round = room.roundNumber;
-
-    // Get seating info for the new hand
-    const seating = getSeatingInfo(room);
-    for (const aiSeat of room.aiPlayers) {
-      seating[aiSeat] = {
-        name: "AI Bot",
-        isAI: true,
-      };
+    // Deduplication: all 4 clients emit deal_next_hand; only process the first
+    if (room.gameState && room.gameState.round >= nextRound) {
+      console.log(`[deal_next_hand] Already dealt round ${nextRound}, resending to ${socket.id}`);
+      const seating = getSeatingInfo(room);
+      for (const aiSeat of room.aiPlayers) seating[aiSeat] = { name: "AI Bot", isAI: true };
+      const playersList = Array.from(room.players.values()).map((p) => ({ id: p.socketId, name: p.name, seat: p.seat }));
+      socket.emit("start_game", { room: { id: roomId, players: playersList }, initialGameState: room.gameState, seating });
+      return;
     }
 
+    room.roundNumber = nextRound;
+    console.log(`[Room ${roomId}] Dealing Round ${room.roundNumber}`);
+
+    // Rebuild aiPlayers from humanSeats snapshot to avoid Round 2 AI bug
+    const humanSeats = room.humanSeats || new Set(
+      Array.from(room.players.values()).map((p) => p.seat).filter(Boolean)
+    );
+    room.aiPlayers = new Set(
+      ["north", "east", "south", "west"].filter((seat) => !humanSeats.has(seat))
+    );
+
+    room.gameState = initializeGame();
+    room.gameState.round = room.roundNumber;
+
+    const seating = getSeatingInfo(room);
+    for (const aiSeat of room.aiPlayers) seating[aiSeat] = { name: "AI Bot", isAI: true };
+
     const playersList = Array.from(room.players.values()).map((p) => ({
-      id: p.socketId,
-      name: p.name,
-      seat: p.seat,
+      id: p.socketId, name: p.name, seat: p.seat,
     }));
 
-    // Broadcast the new game state to all players
     io.to(roomId).emit("start_game", {
       room: { id: roomId, players: playersList },
       initialGameState: room.gameState,
       seating,
     });
 
+    scheduleNextAIAction(room, io, roomId, "bid");
     console.log("New hand started for room:", roomId);
   });
 
@@ -758,9 +780,13 @@ function startGameWithAI(room, io, roomId) {
   console.log(`[Room ${roomId}] Starting Round ${room.roundNumber}`);
 
   room.gameState = initializeGame();
-  // Update the game state with the correct round number
   room.gameState.round = room.roundNumber;
   console.log("Game state initialized");
+
+  // Snapshot human seats so deal_next_hand restores the correct config each round
+  if (!room.humanSeats) {
+    room.humanSeats = new Set(SEAT_ORDER.filter((s) => !room.aiPlayers.has(s)));
+  }
 
   // Add AI player info to seating
   const seating = getSeatingInfo(room);
