@@ -7,6 +7,7 @@ import { Card } from "./Card";
 import { TrickPile } from "./TrickPile";
 import { legalMoves, determineTrickWinner } from "../utils/gameLogic";
 import { playCardSnap, playDealWhoosh, playIllegalCard } from "../utils/sounds";
+import { ShuffleAnimation } from "./ShuffleAnimation";
 
 interface TableProps {
   state: GameState;
@@ -152,7 +153,7 @@ export const Table: React.FC<TableProps> = ({
     prevSpadesBroken.current = currentState.spadesBroken;
   }, [currentState.spadesBroken]);
 
-  // Deal animation — track which round we've animated
+  // Shuffle + deal animation — track which round we've animated
   const [dealtRound, setDealtRound] = useState<number>(-1);
   const [dealing, setDealing] = useState(false);
   useEffect(() => {
@@ -160,10 +161,12 @@ export const Table: React.FC<TableProps> = ({
       setDealing(true);
       playDealWhoosh();
       setDealtRound(currentState.round);
-      const t = setTimeout(() => setDealing(false), 600);
-      return () => clearTimeout(t);
     }
   }, [currentState.round, dealtRound]);
+
+  const handleShuffleDone = useCallback(() => {
+    setDealing(false);
+  }, []);
 
   // Shake state — key of card that should shake
   const [shakingCard, setShakingCard] = useState<string | null>(null);
@@ -277,6 +280,11 @@ export const Table: React.FC<TableProps> = ({
         </motion.div>
       )}
 
+      {/* Shuffle + deal animation overlay */}
+      {dealing && (
+        <ShuffleAnimation onComplete={handleShuffleDone} />
+      )}
+
       {/* Spades broken toast */}
       <AnimatePresence>
         {showSpadesToast && (
@@ -338,6 +346,7 @@ export const Table: React.FC<TableProps> = ({
       <div
         className="absolute inset-x-0 bottom-0 flex items-end pointer-events-auto"
         style={{
+          opacity: dealing ? 0 : 1,
           height: 110,
           background: "transparent",
           borderTop: "none",
@@ -346,7 +355,7 @@ export const Table: React.FC<TableProps> = ({
           paddingRight: 6,
           gap: 8,
           filter: isActive ? "drop-shadow(0 0 14px rgba(255,230,80,0.4))" : "none",
-          transition: "filter 0.4s ease",
+          transition: "opacity 0.2s ease, filter 0.4s ease",
         }}
       >
         <div
@@ -365,13 +374,13 @@ export const Table: React.FC<TableProps> = ({
               <motion.div
                 key={key}
                 className="flex-shrink-0"
-                initial={dealing ? { y: -120, opacity: 0, scale: 0.7 } : false}
+                initial={{ opacity: 0, y: 8 }}
                 animate={
                   isShaking
                     ? { x: [0, -6, 6, -5, 5, -3, 3, 0], y: canPlay ? -12 : 0, opacity: 1, scale: 1, transition: { duration: 0.35 } }
                     : { y: canPlay ? -12 : 0, x: 0, opacity: 1, scale: 1 }
                 }
-                transition={dealing ? { delay: i * 0.04, type: "spring", stiffness: 300, damping: 22 } : { duration: 0.2 }}
+                transition={{ delay: i * 0.03, duration: 0.25, type: "spring", stiffness: 280, damping: 22 }}
                 style={{
                   marginRight: isLast ? 0 : -overlap,
                   zIndex: i,
