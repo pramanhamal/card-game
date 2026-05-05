@@ -291,8 +291,11 @@ const App: React.FC = () => {
   // Auto-play card after 1 second if player doesn't select
   // Depend on totalTricksPlayed so the effect re-runs even when the same player wins consecutive tricks
   const totalTricksPlayed = state ? Object.values(state.tricksWon).reduce((a: number, b: number) => a + b, 0) : 0;
+  const allBidsPlaced = state ? Object.values(state.bids).every((b) => (b as number) >= 0) : false;
   useEffect(() => {
     if (!state || !yourSeat || state.turn !== yourSeat) return;
+    // Don't auto-play during the bidding phase — wait until everyone has bid
+    if (!allBidsPlaced) return;
 
     console.log(`⏱️ [AUTO-PLAY] Timer set for ${yourSeat}, state.turn: ${state.turn}`);
 
@@ -335,7 +338,7 @@ const App: React.FC = () => {
       console.log(`⏱️ [AUTO-PLAY] Timer cleared for ${yourSeat}`);
       clearTimeout(timer);
     };
-  }, [state?.turn, yourSeat, totalTricksPlayed]);
+  }, [state?.turn, yourSeat, totalTricksPlayed, allBidsPlaced]);
 
   const handleNameSubmit = (name: string) => {
     setPlayerName(name);

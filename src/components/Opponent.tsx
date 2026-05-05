@@ -141,7 +141,7 @@ export const Opponent: React.FC<OpponentProps> = ({
           className="text-xs ml-1"
           style={{ color: "rgba(255,255,255,0.55)" }}
         >
-          {tricks}{bid !== null ? `/${bid}` : ""}✦
+          {tricks}{bid !== null && bid >= 0 ? `/${bid}` : ""}✦
         </span>
       </div>
     </div>

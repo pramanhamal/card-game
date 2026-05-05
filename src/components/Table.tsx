@@ -226,7 +226,7 @@ export const Table: React.FC<TableProps> = ({
                 </span>
                 <span style={{ fontSize: 12, fontWeight: 700, color: isYou ? "#ffd700" : "white", lineHeight: 1 }}>
                   {tricksWon[pid]}
-                  <span style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", fontWeight: 400 }}>/{bids[pid] ?? "?"}</span>
+                  <span style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", fontWeight: 400 }}>/{bids[pid] >= 0 ? bids[pid] : "?"}</span>
                 </span>
               </div>
             );
@@ -368,8 +368,8 @@ export const Table: React.FC<TableProps> = ({
                 initial={dealing ? { y: -120, opacity: 0, scale: 0.7 } : false}
                 animate={
                   isShaking
-                    ? { x: [0, -6, 6, -5, 5, -3, 3, 0], y: canPlay ? -12 : 0, transition: { duration: 0.35 } }
-                    : { y: canPlay ? -12 : 0, x: 0 }
+                    ? { x: [0, -6, 6, -5, 5, -3, 3, 0], y: canPlay ? -12 : 0, opacity: 1, scale: 1, transition: { duration: 0.35 } }
+                    : { y: canPlay ? -12 : 0, x: 0, opacity: 1, scale: 1 }
                 }
                 transition={dealing ? { delay: i * 0.04, type: "spring", stiffness: 300, damping: 22 } : { duration: 0.2 }}
                 style={{

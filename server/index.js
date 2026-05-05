@@ -515,7 +515,7 @@ io.on("connection", (socket) => {
     room.gameState.bids[player.seat] = bid;
     io.to(roomId).emit("game_state_update", room.gameState);
 
-    const allBidded = SEAT_ORDER.every((seat) => room.gameState.bids[seat] !== undefined);
+    const allBidded = SEAT_ORDER.every((seat) => room.gameState.bids[seat] >= 0);
     if (allBidded) {
       io.to(roomId).emit("bidding_complete", { gameState: room.gameState });
       if (room.aiPlayers.has(room.gameState.turn)) {
@@ -846,7 +846,7 @@ function scheduleNextAIAction(room, io, roomId, phase) {
 
 // Helper function to execute AI bid
 function executeAIBid(room, io, roomId, aiSeat) {
-  if (room.gameState.bids[aiSeat] !== undefined) return; // Already bid
+  if (room.gameState.bids[aiSeat] >= 0) return; // Already bid
 
   const hand = room.gameState.hands[aiSeat];
   const bid = generateAIBid(hand);
@@ -861,7 +861,7 @@ function executeAIBid(room, io, roomId, aiSeat) {
   room.gameState.turn = nextSeat;
 
   // Check if bidding is complete
-  const allBidded = SEAT_ORDER.every((seat) => room.gameState.bids[seat] !== undefined);
+  const allBidded = SEAT_ORDER.every((seat) => room.gameState.bids[seat] >= 0);
   if (!allBidded && room.aiPlayers.has(nextSeat)) {
     scheduleNextAIAction(room, io, roomId, "bid");
   } else if (allBidded) {
