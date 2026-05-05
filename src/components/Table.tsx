@@ -1,11 +1,12 @@
 // src/components/Table.tsx
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import type { GameState, PlayerId, Card as CardType } from "../types/spades";
 import { Opponent } from "./Opponent";
 import { Card } from "./Card";
 import { TrickPile } from "./TrickPile";
 import { legalMoves, determineTrickWinner } from "../utils/gameLogic";
+import { playCardSnap, playDealWhoosh, playIllegalCard } from "../utils/sounds";
 
 interface TableProps {
   state: GameState;
@@ -13,6 +14,7 @@ interface TableProps {
   you: PlayerId;
   onEvaluateTrick: () => void;
   nameMap?: Record<PlayerId, string>;
+  yourName?: string;
 }
 
 const defaultNameMap: Record<PlayerId, string> = {
@@ -40,6 +42,7 @@ export const Table: React.FC<TableProps> = ({
   you,
   onEvaluateTrick,
   nameMap = defaultNameMap,
+  yourName,
 }) => {
   const { trick: serverTrick, round, turn, hands, tricksWon, bids } = currentState;
 
@@ -136,6 +139,34 @@ export const Table: React.FC<TableProps> = ({
     }
     return () => clearTimeout(timer);
   }, [isMyTurn]);
+
+  // Spades-broken toast
+  const [showSpadesToast, setShowSpadesToast] = useState(false);
+  const prevSpadesBroken = useRef(currentState.spadesBroken);
+  useEffect(() => {
+    if (!prevSpadesBroken.current && currentState.spadesBroken) {
+      setShowSpadesToast(true);
+      const t = setTimeout(() => setShowSpadesToast(false), 2400);
+      return () => clearTimeout(t);
+    }
+    prevSpadesBroken.current = currentState.spadesBroken;
+  }, [currentState.spadesBroken]);
+
+  // Deal animation — track which round we've animated
+  const [dealtRound, setDealtRound] = useState<number>(-1);
+  const [dealing, setDealing] = useState(false);
+  useEffect(() => {
+    if (currentState.round !== dealtRound) {
+      setDealing(true);
+      playDealWhoosh();
+      setDealtRound(currentState.round);
+      const t = setTimeout(() => setDealing(false), 600);
+      return () => clearTimeout(t);
+    }
+  }, [currentState.round, dealtRound]);
+
+  // Shake state — key of card that should shake
+  const [shakingCard, setShakingCard] = useState<string | null>(null);
 
   const legalSet = new Set(
     isActive
@@ -246,9 +277,33 @@ export const Table: React.FC<TableProps> = ({
         </motion.div>
       )}
 
+      {/* Spades broken toast */}
+      <AnimatePresence>
+        {showSpadesToast && (
+          <motion.div
+            key="spades-toast"
+            initial={{ opacity: 0, y: -18, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -14, scale: 0.9 }}
+            transition={{ type: "spring", stiffness: 380, damping: 26 }}
+            className="absolute left-1/2 -translate-x-1/2 z-40 px-5 py-2 rounded-full text-sm font-bold"
+            style={{
+              top: "28%",
+              background: "linear-gradient(90deg, rgba(30,10,60,0.96), rgba(90,30,160,0.96))",
+              border: "1px solid rgba(180,100,255,0.5)",
+              color: "#d8b4fe",
+              boxShadow: "0 4px 20px rgba(130,60,200,0.5)",
+            }}
+          >
+            ♠ Spades Broken!
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <TrickPile
         trick={visualTrick}
         winner={lastWinner}
+        winnerName={lastWinner ? (lastWinner === you ? (yourName ?? "You") : nameMap[lastWinner]) : undefined}
         seatOf={seatOf}
         onFlyOutEnd={handleFlyOutEnd}
       />
@@ -303,24 +358,41 @@ export const Table: React.FC<TableProps> = ({
             const overlap = total > 1 ? Math.max(0, Math.ceil((total * 64 - 540) / (total - 1))) : 0;
             const key = `${c.suit}-${c.rank}`;
             const canPlay = isActive && legalSet.has(key);
+            const isIllegal = isActive && !legalSet.has(key);
+            const isShaking = shakingCard === key;
             const isLast = i === total - 1;
             return (
-              <div
+              <motion.div
                 key={key}
-                className="flex-shrink-0 transition-all duration-200"
+                className="flex-shrink-0"
+                initial={dealing ? { y: -120, opacity: 0, scale: 0.7 } : false}
+                animate={
+                  isShaking
+                    ? { x: [0, -6, 6, -5, 5, -3, 3, 0], y: canPlay ? -12 : 0, transition: { duration: 0.35 } }
+                    : { y: canPlay ? -12 : 0, x: 0 }
+                }
+                transition={dealing ? { delay: i * 0.04, type: "spring", stiffness: 300, damping: 22 } : { duration: 0.2 }}
                 style={{
                   marginRight: isLast ? 0 : -overlap,
                   zIndex: i,
-                  transform: canPlay ? "translateY(-12px)" : "translateY(0)",
-                  cursor: canPlay ? "pointer" : "default",
+                  cursor: canPlay ? "pointer" : isIllegal ? "not-allowed" : "default",
                 }}
-                onClick={canPlay ? () => playCard(you, c) : undefined}
+                onClick={() => {
+                  if (canPlay) {
+                    playCardSnap();
+                    playCard(you, c);
+                  } else if (isIllegal) {
+                    playIllegalCard();
+                    setShakingCard(key);
+                    setTimeout(() => setShakingCard(null), 380);
+                  }
+                }}
               >
                 <div
                   className={`rounded-lg overflow-hidden transition-all duration-200 ${
                     canPlay
                       ? "ring-2 ring-yellow-300 ring-offset-1 ring-offset-transparent"
-                      : canPlay === false && isActive
+                      : isIllegal
                       ? "opacity-50"
                       : ""
                   }`}
@@ -332,7 +404,7 @@ export const Table: React.FC<TableProps> = ({
                 >
                   <Card card={c} faceUp />
                 </div>
-              </div>
+              </motion.div>
             );
           })}
         </div>

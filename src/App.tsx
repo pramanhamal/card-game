@@ -502,6 +502,7 @@ const App: React.FC = () => {
           playCard={handlePlayCard}
           you={yourSeat}
           onEvaluateTrick={evaluateAndAdvanceTrick}
+          yourName={playerName}
           nameMap={{
             north: seatingNames.north,
             east: seatingNames.east,

@@ -1,5 +1,6 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { motion } from "framer-motion";
+import confetti from "canvas-confetti";
 import type { PlayerId, GameResult } from "../types/spades";
 
 interface Props {
@@ -23,6 +24,31 @@ export const GameOverPopup: React.FC<Props> = ({
   );
   const topScore = totalScores[sorted[0]];
   const winners = sorted.filter((p) => totalScores[p] === topScore);
+
+  useEffect(() => {
+    const end = Date.now() + 2200;
+    const colors = ["#ffd700", "#ff6b6b", "#4ecdc4", "#a78bfa", "#f9a8d4"];
+    const frame = () => {
+      confetti({
+        particleCount: 5,
+        angle: 60,
+        spread: 55,
+        origin: { x: 0 },
+        colors,
+        gravity: 1.2,
+      });
+      confetti({
+        particleCount: 5,
+        angle: 120,
+        spread: 55,
+        origin: { x: 1 },
+        colors,
+        gravity: 1.2,
+      });
+      if (Date.now() < end) requestAnimationFrame(frame);
+    };
+    frame();
+  }, []);
 
   return (
     <motion.div
