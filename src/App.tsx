@@ -69,13 +69,15 @@ const App: React.FC = () => {
     clearGame,
   } = useGameState();
 
-  // Ref to track current game state for auto-play timer callback
+  // Refs so auto-play timer always reads the latest values without stale closures
   const stateRef = useRef(state);
+  const socketRef = useRef<Socket | null>(null);
+  const currentRoomRef = useRef<Room | null>(null);
   // Guard to block stale room_update events during room transitions
   const leavingRoomRef = useRef(false);
-  useEffect(() => {
-    stateRef.current = state;
-  }, [state]);
+  useEffect(() => { stateRef.current = state; }, [state]);
+  useEffect(() => { socketRef.current = socket; }, [socket]);
+  useEffect(() => { currentRoomRef.current = currentRoom; }, [currentRoom]);
 
   useEffect(() => {
     const sock = io(SERVER_URL, {
@@ -287,6 +289,8 @@ const App: React.FC = () => {
   }, [gameHistory.length, isGameOver, endGame, totalScores]);
 
   // Auto-play card after 1 second if player doesn't select
+  // Depend on totalTricksPlayed so the effect re-runs even when the same player wins consecutive tricks
+  const totalTricksPlayed = state ? Object.values(state.tricksWon).reduce((a: number, b: number) => a + b, 0) : 0;
   useEffect(() => {
     if (!state || !yourSeat || state.turn !== yourSeat) return;
 
@@ -318,14 +322,20 @@ const App: React.FC = () => {
       const sortedCards = [...legalMovesForPlayer].sort((a, b) => (cardValues[a.rank as string] || 0) - (cardValues[b.rank as string] || 0));
       const cardToPlay = sortedCards[0];
       console.log(`⏱️ [AUTO-PLAY] Card to play: ${cardToPlay.rank}${cardToPlay.suit}`);
-      handlePlayCard(yourSeat, cardToPlay);
+      const sock = socketRef.current;
+      const room = currentRoomRef.current;
+      if (!sock || !room) {
+        console.log(`⏱️ [AUTO-PLAY] ❌ Cancelled: no socket or room`);
+        return;
+      }
+      sock.emit("play_card", { roomId: room.id, card: cardToPlay });
     }, 1000);
 
     return () => {
       console.log(`⏱️ [AUTO-PLAY] Timer cleared for ${yourSeat}`);
       clearTimeout(timer);
     };
-  }, [state?.turn, yourSeat]);
+  }, [state?.turn, yourSeat, totalTricksPlayed]);
 
   const handleNameSubmit = (name: string) => {
     setPlayerName(name);
