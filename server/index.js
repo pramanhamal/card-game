@@ -513,16 +513,26 @@ io.on("connection", (socket) => {
     if (!player || !player.seat) return;
 
     room.gameState.bids[player.seat] = bid;
-    io.to(roomId).emit("game_state_update", room.gameState);
+
+    // Advance turn to the next bidder
+    const seatIdx = SEAT_ORDER.indexOf(player.seat);
+    const nextSeat = SEAT_ORDER[(seatIdx + 1) % SEAT_ORDER.length];
 
     const allBidded = SEAT_ORDER.every((seat) => room.gameState.bids[seat] >= 0);
     if (allBidded) {
+      // Restore turn to whoever leads the first trick (keep whatever initializeGame set)
+      io.to(roomId).emit("game_state_update", room.gameState);
       io.to(roomId).emit("bidding_complete", { gameState: room.gameState });
       if (room.aiPlayers.has(room.gameState.turn)) {
         scheduleNextAIAction(room, io, roomId, "play");
       }
-    } else if (room.aiPlayers.size > 0) {
-      scheduleNextAIAction(room, io, roomId, "bid");
+    } else {
+      // Point turn at the next bidder so clients know whose turn it is
+      room.gameState.turn = nextSeat;
+      io.to(roomId).emit("game_state_update", room.gameState);
+      if (room.aiPlayers.has(nextSeat)) {
+        scheduleNextAIAction(room, io, roomId, "bid");
+      }
     }
   });
 
@@ -569,7 +579,12 @@ io.on("connection", (socket) => {
       seating,
     });
 
-    scheduleNextAIAction(room, io, roomId, "bid");
+    // Delay AI bidding until after the 1.5s game-start animation so that
+    // game_state_update events don't arrive before clients are ready,
+    // preventing multiple bid popups appearing simultaneously in round 2.
+    setTimeout(() => {
+      scheduleNextAIAction(room, io, roomId, "bid");
+    }, 1600);
     console.log("New hand started for room:", roomId);
   });
 
@@ -816,8 +831,10 @@ function startGameWithAI(room, io, roomId) {
 
   console.log("start_game emitted successfully");
 
-  // Schedule first AI action if needed
-  scheduleNextAIAction(room, io, roomId, "bid");
+  // Delay AI bidding until after the 1.5s game-start animation
+  setTimeout(() => {
+    scheduleNextAIAction(room, io, roomId, "bid");
+  }, 1600);
   console.log("=== END STARTING GAME ===\n");
 }
 
@@ -852,23 +869,25 @@ function executeAIBid(room, io, roomId, aiSeat) {
   const bid = generateAIBid(hand);
   room.gameState.bids[aiSeat] = bid;
 
-  io.to(roomId).emit("game_state_update", room.gameState);
-
-  // Move to next player
+  // Move to next player BEFORE emitting so clients see the new turn
   const seatIdx = SEAT_ORDER.indexOf(aiSeat);
   const nextIdx = (seatIdx + 1) % SEAT_ORDER.length;
   const nextSeat = SEAT_ORDER[nextIdx];
-  room.gameState.turn = nextSeat;
 
   // Check if bidding is complete
   const allBidded = SEAT_ORDER.every((seat) => room.gameState.bids[seat] >= 0);
-  if (!allBidded && room.aiPlayers.has(nextSeat)) {
-    scheduleNextAIAction(room, io, roomId, "bid");
-  } else if (allBidded) {
-    // Bidding done, start card play phase
+  if (allBidded) {
+    // Don't advance turn — keep whatever initializeGame set for trick lead
+    io.to(roomId).emit("game_state_update", room.gameState);
     io.to(roomId).emit("bidding_complete", { gameState: room.gameState });
     if (room.aiPlayers.has(room.gameState.turn)) {
       scheduleNextAIAction(room, io, roomId, "play");
+    }
+  } else {
+    room.gameState.turn = nextSeat;
+    io.to(roomId).emit("game_state_update", room.gameState);
+    if (room.aiPlayers.has(nextSeat)) {
+      scheduleNextAIAction(room, io, roomId, "bid");
     }
   }
 }
@@ -896,7 +915,10 @@ function executeAICardPlay(room, io, roomId, aiSeat) {
 
 app.get("/health", (_, res) => res.json({ ok: true }));
 
-const PORT = process.env.PORT || 3000;
+// Never bind on Vite's default port (5173) — Vite proxies socket.io to us.
+// In production (Render) PORT is set to a platform-assigned value != 5173.
+const _rawPort = process.env.SERVER_PORT || process.env.PORT || 3001;
+const PORT = String(_rawPort) === "5173" ? 3001 : _rawPort;
 httpServer.listen(PORT, () => {
   console.log("Server listening on", PORT);
 });

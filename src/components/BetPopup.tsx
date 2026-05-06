@@ -29,16 +29,18 @@ function estimateHandStrength(hand: Card[]): number {
   return Math.min(8, estimatedTricks);
 }
 
+const AUTO_SELECT_SECONDS = 30;
+
 export const BetPopup: React.FC<Props> = ({ onSelect, hand = [] }) => {
   const [hovered, setHovered] = useState<number | null>(null);
-  const [timeLeft, setTimeLeft] = useState(1);
-  const bids = [1, 2, 3, 4, 5, 6, 7, 8];
+  const [timeLeft, setTimeLeft] = useState(AUTO_SELECT_SECONDS);
+  const bids = [0, 1, 2, 3, 4, 5, 6, 7, 8];
 
   // Calculate recommended bid based on hand strength
   const estimatedTricks = estimateHandStrength(hand);
   const recommendedBid = Math.min(8, Math.max(1, estimatedTricks));
 
-  // Auto-select after 1 second
+  // Auto-select after 30 seconds
   useEffect(() => {
     const timer = setInterval(() => {
       setTimeLeft((prev) => {
@@ -95,44 +97,54 @@ export const BetPopup: React.FC<Props> = ({ onSelect, hand = [] }) => {
         </div>
 
         {/* Bid grid */}
-        <div className="grid grid-cols-8 gap-3 mb-4">
-          {bids.map((b) => (
-            <motion.button
-              key={b}
-              whileHover={{ scale: 1.12 }}
-              whileTap={{ scale: 0.92 }}
-              onHoverStart={() => setHovered(b)}
-              onHoverEnd={() => setHovered(null)}
-              onClick={() => onSelect(b)}
-              className="relative rounded-lg py-4 px-2 text-lg font-bold transition-all"
-              style={{
-                background:
-                  hovered === b
+        <div className="grid grid-cols-9 gap-2 mb-4">
+          {bids.map((b) => {
+            const isNil = b === 0;
+            const isRecommended = b === recommendedBid;
+            const isHovered = hovered === b;
+            return (
+              <motion.button
+                key={b}
+                whileHover={{ scale: 1.12 }}
+                whileTap={{ scale: 0.92 }}
+                onHoverStart={() => setHovered(b)}
+                onHoverEnd={() => setHovered(null)}
+                onClick={() => onSelect(b)}
+                className="relative rounded-lg py-4 px-2 text-lg font-bold transition-all"
+                style={{
+                  background: isHovered
                     ? "rgba(255,215,0,0.35)"
-                    : b === recommendedBid
+                    : isNil
+                    ? "rgba(180,60,60,0.25)"
+                    : isRecommended
                     ? "rgba(76,175,80,0.25)"
                     : "rgba(255,255,255,0.1)",
-                border:
-                  hovered === b
+                  border: isHovered
                     ? "2px solid rgba(255,215,0,0.6)"
-                    : b === recommendedBid
+                    : isNil
+                    ? "2px solid rgba(220,80,80,0.7)"
+                    : isRecommended
                     ? "2px solid rgba(76,175,80,0.8)"
                     : "1px solid rgba(255,255,255,0.15)",
-                color:
-                  hovered === b
+                  color: isHovered
                     ? "#ffd700"
-                    : b === recommendedBid
+                    : isNil
+                    ? "#f87171"
+                    : isRecommended
                     ? "#4caf50"
                     : "white",
-                boxShadow:
-                  b === recommendedBid
+                  boxShadow: isNil
+                    ? "0 0 10px rgba(220,60,60,0.4)"
+                    : isRecommended
                     ? "0 0 12px rgba(76,175,80,0.5)"
                     : "none",
-              }}
-            >
-              {b}
-            </motion.button>
-          ))}
+                  fontSize: isNil ? 13 : undefined,
+                }}
+              >
+                {isNil ? "NIL" : b}
+              </motion.button>
+            );
+          })}
         </div>
 
         {/* Progress bar */}
@@ -145,7 +157,7 @@ export const BetPopup: React.FC<Props> = ({ onSelect, hand = [] }) => {
             <motion.div
               className="h-full bg-gradient-to-r from-green-500 to-blue-500"
               initial={{ width: "100%" }}
-              animate={{ width: `${(timeLeft / 1) * 100}%` }}
+              animate={{ width: `${(timeLeft / AUTO_SELECT_SECONDS) * 100}%` }}
               transition={{ linear: true, duration: 0.1 }}
             />
           </div>

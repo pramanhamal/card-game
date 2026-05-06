@@ -171,8 +171,10 @@ export const Table: React.FC<TableProps> = ({
   // Shake state — key of card that should shake
   const [shakingCard, setShakingCard] = useState<string | null>(null);
 
+  const allBidsPlaced = Object.values(bids).every((b) => (b as number) >= 0);
+
   const legalSet = new Set(
-    isActive
+    isActive && allBidsPlaced
       ? legalMoves(currentState, you).map((c) => `${c.suit}-${c.rank}`)
       : []
   );
@@ -258,27 +260,32 @@ export const Table: React.FC<TableProps> = ({
         }}
       />
 
-      {/* "Your Turn" center indicator */}
-      {isMyTurn && (
-        <motion.div
-          className="absolute left-1/2 -translate-x-1/2 z-10"
-          style={{ top: "48%" }}
-          initial={{ opacity: 0, scale: 0.8 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0 }}
-        >
-          <div
-            className="px-4 py-1 rounded-full text-sm font-bold"
-            style={{
-              background: "rgba(255,210,0,0.9)",
-              color: "#1a1000",
-              boxShadow: "0 2px 12px rgba(255,200,0,0.5)",
-            }}
+      {/* Waiting for bids indicator */}
+      <AnimatePresence>
+        {!allBidsPlaced && !dealing && (
+          <motion.div
+            key="waiting-bids"
+            className="absolute left-1/2 -translate-x-1/2 z-10"
+            style={{ top: "48%" }}
+            initial={{ opacity: 0, scale: 0.85 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.85 }}
+            transition={{ type: "spring", stiffness: 320, damping: 26 }}
           >
-            Your Turn
-          </div>
-        </motion.div>
-      )}
+            <div
+              className="px-4 py-1.5 rounded-full text-sm font-semibold"
+              style={{
+                background: "rgba(20,10,50,0.85)",
+                border: "1px solid rgba(180,140,255,0.35)",
+                color: "rgba(210,180,255,0.9)",
+                boxShadow: "0 2px 12px rgba(80,40,160,0.4)",
+              }}
+            >
+              Waiting for bids…
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Shuffle + deal animation overlay */}
       {dealing && (
@@ -311,8 +318,7 @@ export const Table: React.FC<TableProps> = ({
       <TrickPile
         trick={visualTrick}
         winner={lastWinner}
-        winnerName={lastWinner ? (lastWinner === you ? (yourName ?? "You") : nameMap[lastWinner]) : undefined}
-        seatOf={seatOf}
+seatOf={seatOf}
         onFlyOutEnd={handleFlyOutEnd}
       />
 
@@ -401,8 +407,6 @@ export const Table: React.FC<TableProps> = ({
                   className={`rounded-lg overflow-hidden transition-all duration-200 ${
                     canPlay
                       ? "ring-2 ring-yellow-300 ring-offset-1 ring-offset-transparent"
-                      : isIllegal
-                      ? "opacity-50"
                       : ""
                   }`}
                   style={{

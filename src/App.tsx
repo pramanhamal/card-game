@@ -73,11 +73,15 @@ const App: React.FC = () => {
   const stateRef = useRef(state);
   const socketRef = useRef<Socket | null>(null);
   const currentRoomRef = useRef<Room | null>(null);
+  const yourSeatRef = useRef<PlayerId | null>(null);
+  const betPopupOpenRef = useRef(false);
   // Guard to block stale room_update events during room transitions
   const leavingRoomRef = useRef(false);
   useEffect(() => { stateRef.current = state; }, [state]);
   useEffect(() => { socketRef.current = socket; }, [socket]);
   useEffect(() => { currentRoomRef.current = currentRoom; }, [currentRoom]);
+  useEffect(() => { yourSeatRef.current = yourSeat; }, [yourSeat]);
+  useEffect(() => { betPopupOpenRef.current = betPopupOpen; }, [betPopupOpen]);
 
   useEffect(() => {
     const sock = io(SERVER_URL, {
@@ -198,13 +202,24 @@ const App: React.FC = () => {
         if (payload.initialGameState.round >= 2) {
           console.log(`[Round ${payload.initialGameState.round}] start_game handler: Showing game start popup`);
         }
+        // Reset popup state cleanly for the new round
+        setBetPopupOpen(false);
         setShowGameStartPopup(true);
+        const expectedRound = payload.initialGameState.round;
         setTimeout(() => {
-          if (payload.initialGameState.round >= 2) {
-            console.log(`[Round ${payload.initialGameState.round}] start_game handler: 1.5s timeout fired, closing popup and showing betting popup`);
-          }
           setShowGameStartPopup(false);
-          setBetPopupOpen(true);
+          // Use stateRef (current state) not the initial closure value —
+          // AI bids may have already advanced the turn by the time this fires.
+          const cur = stateRef.current;
+          const seat = yourSeatRef.current;
+          if (!cur || cur.round !== expectedRound) return;
+          const biddingActive =
+            seat &&
+            cur.turn === seat &&
+            Object.values(cur.bids).some((b) => (b as number) < 0);
+          if (biddingActive && !betPopupOpenRef.current) {
+            setBetPopupOpen(true);
+          }
         }, 1500);
       }
     );
@@ -223,6 +238,13 @@ const App: React.FC = () => {
         console.log("[GAME_STATE_UPDATE] Error logging state:", err);
       }
       applyServerState(newState);
+      // Open bid popup when it becomes this player's turn during the bidding phase.
+      // Guard: only during an active bidding round (at least one bid still -1).
+      const seat = yourSeatRef.current;
+      const isBiddingRound = Object.values(newState.bids).some((b) => (b as number) < 0);
+      if (seat && newState.turn === seat && isBiddingRound && !betPopupOpenRef.current) {
+        setBetPopupOpen(true);
+      }
     });
 
     // Pong handler for heartbeat
@@ -288,10 +310,11 @@ const App: React.FC = () => {
     }
   }, [gameHistory.length, isGameOver, endGame, totalScores]);
 
+  const allBidsPlaced = state ? Object.values(state.bids).every((b) => (b as number) >= 0) : false;
+
   // Auto-play card after 1 second if player doesn't select
   // Depend on totalTricksPlayed so the effect re-runs even when the same player wins consecutive tricks
   const totalTricksPlayed = state ? Object.values(state.tricksWon).reduce((a: number, b: number) => a + b, 0) : 0;
-  const allBidsPlaced = state ? Object.values(state.bids).every((b) => (b as number) >= 0) : false;
   useEffect(() => {
     if (!state || !yourSeat || state.turn !== yourSeat) return;
     // Don't auto-play during the bidding phase — wait until everyone has bid

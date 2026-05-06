@@ -124,7 +124,12 @@ function calculateScores(bids, tricksWon) {
   for (const p of SEAT_ORDER) {
     const bid = bids[p];
     const won = tricksWon[p];
-    result[p] = won < bid ? -(10 * bid) : (10 * bid) + (won - bid);
+    if (bid === 0) {
+      // Nil bid: +100 if won 0 tricks, -100 if won any tricks
+      result[p] = won === 0 ? 100 : -100;
+    } else {
+      result[p] = won < bid ? -(10 * bid) : (10 * bid) + (won - bid);
+    }
   }
   return result;
 }

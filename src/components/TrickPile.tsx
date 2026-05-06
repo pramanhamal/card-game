@@ -9,7 +9,6 @@ interface TrickPileProps {
   trick: Record<PlayerId, CardType | null>;
   winner: PlayerId | null;
   seatOf: Record<PlayerId, "north" | "east" | "south" | "west">;
-  winnerName?: string;
   onFlyOutEnd?: () => void;
 }
 
@@ -36,24 +35,19 @@ export const TrickPile: React.FC<TrickPileProps> = ({
   winner,
   onFlyOutEnd,
   seatOf,
-  winnerName,
 }) => {
   const [isFlyingOut, setIsFlyingOut] = useState(false);
-  const [showBanner, setShowBanner] = useState(false);
 
   useEffect(() => {
     if (winner) {
       playTrickWin();
-      setShowBanner(true);
       const flyOutTimer = setTimeout(() => setIsFlyingOut(true), 820);
-      const bannerTimer = setTimeout(() => setShowBanner(false), 900);
       const cleanupTimer = setTimeout(() => {
         onFlyOutEnd?.();
         setIsFlyingOut(false);
       }, 1480);
       return () => {
         clearTimeout(flyOutTimer);
-        clearTimeout(bannerTimer);
         clearTimeout(cleanupTimer);
       };
     }
@@ -73,28 +67,6 @@ export const TrickPile: React.FC<TrickPileProps> = ({
 
   return (
     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-      {/* Trick winner banner */}
-      <AnimatePresence>
-        {showBanner && winner && (
-          <motion.div
-            key="winner-banner"
-            initial={{ opacity: 0, y: 12, scale: 0.88 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -10, scale: 0.9 }}
-            transition={{ type: "spring", stiffness: 400, damping: 28 }}
-            className="absolute z-50 px-5 py-2 rounded-full text-sm font-bold"
-            style={{
-              background: "linear-gradient(90deg, rgba(255,215,0,0.92), rgba(255,160,0,0.92))",
-              color: "#1a0f00",
-              boxShadow: "0 4px 20px rgba(255,180,0,0.55)",
-              top: "38%",
-            }}
-          >
-            {winnerName ?? winner} wins the trick!
-          </motion.div>
-        )}
-      </AnimatePresence>
-
       {/* Subtle glow on the table center when all cards are in */}
       <AnimatePresence>
         {trickIsFull && !isFlyingOut && (

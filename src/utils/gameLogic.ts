@@ -191,7 +191,11 @@ export function calculateScores(
   for (const pid of SEAT_ORDER) {
     const bid = bids[pid];
     const won = tricksWon[pid];
-    result[pid] = won < bid ? -(10 * bid) : (10 * bid) + (won - bid);
+    if (bid === 0) {
+      result[pid] = won === 0 ? 100 : -100;
+    } else {
+      result[pid] = won < bid ? -(10 * bid) : (10 * bid) + (won - bid);
+    }
   }
   return result;
 }
