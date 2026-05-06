@@ -13,6 +13,7 @@ import Animated, {
   useAnimatedStyle,
   withSpring,
   withTiming,
+  withDelay,
 } from "react-native-reanimated";
 import type { GameState, PlayerId, Card as CardType } from "../types/spades";
 import { Opponent } from "./Opponent";
@@ -72,11 +73,10 @@ const HandCard: React.FC<HandCardProps> = ({
   const scale = useSharedValue(1);
 
   useEffect(() => {
-    translateY.value = withSpring(0, {
-      stiffness: 380,
-      damping: 30,
-      delay: index * 25,
-    } as any);
+    translateY.value = withDelay(
+      index * 25,
+      withSpring(0, { stiffness: 380, damping: 30 })
+    );
   }, []);
 
   useEffect(() => {
