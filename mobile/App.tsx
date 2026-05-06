@@ -19,6 +19,7 @@ import { GameOverPopup } from "./src/components/GameOverPopup";
 import { NameInputPopup } from "./src/components/NameInputPopup";
 import { Lobby } from "./src/components/Lobby";
 import type { Card, PlayerId, GameState } from "./src/types/spades";
+import { legalMoves } from "./src/utils/gameLogic";
 import { SERVER_URL } from "./src/config";
 
 interface Player {
@@ -42,17 +43,21 @@ export default function App() {
   const [showGameStartPopup, setShowGameStartPopup] = useState(false);
   const [betPopupOpen, setBetPopupOpen] = useState(false);
   const [dashboardOpen, setDashboardOpen] = useState(false);
-
-  // Refs for use inside socket handlers (avoid stale closures)
-  const stateRef = useRef<GameState | null>(null);
-  const yourSeatRef = useRef<PlayerId | null>(null);
-  const betPopupOpenRef = useRef(false);
   const [seatingNames, setSeatingNames] = useState<Record<PlayerId, string>>({
     north: "North",
     east: "East",
     south: "South",
     west: "West",
   });
+
+  // Refs for use inside socket handlers (avoid stale closures)
+  const stateRef = useRef<GameState | null>(null);
+  const socketRef = useRef<Socket | null>(null);
+  const currentRoomRef = useRef<Room | null>(null);
+  const yourSeatRef = useRef<PlayerId | null>(null);
+  const betPopupOpenRef = useRef(false);
+  // Guard to block stale room_update events during room transitions
+  const leavingRoomRef = useRef(false);
 
   const {
     state,
@@ -65,18 +70,24 @@ export default function App() {
     playCard,
     evaluateAndAdvanceTrick,
     resetGame,
+    dealNextHand,
     applyServerState,
+    applyServerStateNewHand,
+    endGame,
+    clearGame,
   } = useGameState();
 
   // Keep refs in sync with state
   useEffect(() => { stateRef.current = state; }, [state]);
+  useEffect(() => { socketRef.current = socket; }, [socket]);
+  useEffect(() => { currentRoomRef.current = currentRoom; }, [currentRoom]);
   useEffect(() => { yourSeatRef.current = yourSeat; }, [yourSeat]);
   useEffect(() => { betPopupOpenRef.current = betPopupOpen; }, [betPopupOpen]);
 
   useEffect(() => {
     const sock = io(SERVER_URL, {
       path: "/socket.io",
-      transports: ["websocket"],
+      transports: ["websocket", "polling"],
       autoConnect: true,
     });
     setSocket(sock);
@@ -98,17 +109,18 @@ export default function App() {
     });
 
     sock.on("room_update", ({ roomId, players }: any) => {
-      setCurrentRoom({
-        id: roomId,
-        players: players.map((p: any) => ({
-          id: p.id,
-          name: p.name,
-          seat: p.seat,
-        })),
+      if (leavingRoomRef.current) return;
+      const mappedPlayers = Array.isArray(players)
+        ? players.map((p: any) => ({ id: p.id, name: p.name, seat: p.seat }))
+        : [];
+      setCurrentRoom((prev) => {
+        if (prev && prev.id !== roomId) return prev;
+        return { id: roomId, players: mappedPlayers };
       });
     });
 
     sock.on("assigned_seat", ({ seat }: { seat: PlayerId }) => {
+      leavingRoomRef.current = false;
       setYourSeat(seat);
     });
 
@@ -119,9 +131,20 @@ export default function App() {
         initialGameState: GameState;
         seating: Record<string, { name: string; isAI: boolean }>;
       }) => {
-        setCurrentRoom(payload.room);
-        applyServerState(payload.initialGameState);
-        setBetPopupOpen(false);
+        if (!payload.room || !payload.room.players) return;
+
+        setCurrentRoom({
+          id: payload.room.id || "unknown",
+          players: payload.room.players || [],
+        });
+
+        // For round 2+, reset hand state for new round
+        if (payload.initialGameState.round > 1) {
+          setBetPopupOpen(false);
+          applyServerStateNewHand(payload.initialGameState);
+        } else {
+          applyServerState(payload.initialGameState);
+        }
 
         const seating = payload.seating || {};
         setSeatingNames({
@@ -131,12 +154,11 @@ export default function App() {
           west: seating.west?.name || "West",
         });
 
+        setBetPopupOpen(false);
         setShowGameStartPopup(true);
         const expectedRound = payload.initialGameState.round;
         setTimeout(() => {
           setShowGameStartPopup(false);
-          // Use live state (stateRef) so AI bids that fired during the
-          // animation are already reflected in the current turn
           const cur = stateRef.current;
           const seat = yourSeatRef.current;
           if (!cur || cur.round !== expectedRound) return;
@@ -158,7 +180,6 @@ export default function App() {
 
     sock.on("game_state_update", (newState: GameState) => {
       applyServerState(newState);
-      // Open bid popup when it becomes this player's turn during bidding
       const seat = yourSeatRef.current;
       const isBiddingRound = Object.values(newState.bids).some(
         (b) => (b as number) < 0
@@ -168,10 +189,81 @@ export default function App() {
       }
     });
 
+    sock.on("pong", () => {});
+
+    // Keepalive heartbeat
+    const pingInterval = setInterval(() => {
+      sock.emit("ping");
+    }, 10000);
+
     return () => {
+      clearInterval(pingInterval);
       sock.disconnect();
     };
   }, [applyServerState]);
+
+  // Auto-deal next hand after current hand completes
+  useEffect(() => {
+    const willGameEnd = gameHistory.length >= 2;
+
+    if (isHandOver && state && !isGameOver && !willGameEnd) {
+      const timer = setTimeout(() => {
+        if (currentRoomRef.current) {
+          socketRef.current?.emit("deal_next_hand", {
+            roomId: currentRoomRef.current.id,
+          });
+        } else {
+          dealNextHand();
+          setTimeout(() => setBetPopupOpen(true), 1600);
+        }
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [isHandOver, state, isGameOver, dealNextHand, gameHistory.length]);
+
+  // End game after 2 rounds
+  useEffect(() => {
+    if (gameHistory.length >= 2 && !isGameOver) {
+      endGame();
+    }
+  }, [gameHistory.length, isGameOver, endGame]);
+
+  // Auto-play card after 1 second if player doesn't act
+  const totalTricksPlayed = state
+    ? Object.values(state.tricksWon).reduce((a: number, b: number) => a + b, 0)
+    : 0;
+  const allBidsPlaced = state
+    ? Object.values(state.bids).every((b) => (b as number) >= 0)
+    : false;
+
+  useEffect(() => {
+    if (!state || !yourSeat || state.turn !== yourSeat) return;
+    if (!allBidsPlaced) return;
+
+    const timer = setTimeout(() => {
+      const currentState = stateRef.current;
+      if (!currentState || currentState.turn !== yourSeat) return;
+
+      const legal = legalMoves(currentState, yourSeat);
+      if (legal.length === 0) return;
+
+      const cardValues: Record<string, number> = {
+        A: 14, K: 13, Q: 12, J: 11,
+        "10": 10, "9": 9, "8": 8, "7": 7,
+        "6": 6, "5": 5, "4": 4, "3": 3, "2": 2,
+      };
+      const sorted = [...legal].sort(
+        (a, b) => (cardValues[String(a.rank)] || 0) - (cardValues[String(b.rank)] || 0)
+      );
+
+      const sock = socketRef.current;
+      const room = currentRoomRef.current;
+      if (!sock || !room) return;
+      sock.emit("play_card", { roomId: room.id, card: sorted[0] });
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [state?.turn, yourSeat, totalTricksPlayed, allBidsPlaced]);
 
   const handleNameSubmit = (name: string) => {
     setPlayerName(name);
@@ -189,29 +281,22 @@ export default function App() {
   const handlePlaceBid = (bid: number) => {
     if (!currentRoom || !yourSeat) return;
     placeBid(yourSeat, bid);
-    socket?.emit("place_bid", {
-      roomId: currentRoom.id,
-      bid,
-    });
+    socket?.emit("place_bid", { roomId: currentRoom.id, bid });
     setBetPopupOpen(false);
   };
 
   const handlePlayCard = (player: PlayerId, card: Card) => {
-    if (!currentRoom || !yourSeat) return;
-    socket?.emit("play_card", {
-      roomId: currentRoom.id,
-      card,
-    });
-  };
-
-  const handleNewGame = () => {
-    resetGame();
-    setBetPopupOpen(true);
+    if (!currentRoom || !socket) return;
+    socket.emit("play_card", { roomId: currentRoom.id, card });
   };
 
   const handlePlayAgain = () => {
-    resetGame();
-    setBetPopupOpen(true);
+    leavingRoomRef.current = true;
+    socket?.emit("leave_room");
+    clearGame();
+    setCurrentRoom(null);
+    setYourSeat(null);
+    socket?.emit("join_multiplayer_queue");
   };
 
   // --- RENDER LOGIC ---
@@ -259,7 +344,7 @@ export default function App() {
     );
   }
 
-  if (state && currentRoom && yourSeat && !isGameOver) {
+  if (state && currentRoom && yourSeat) {
     return (
       <GestureHandlerRootView style={styles.root}>
         <SafeAreaProvider>
@@ -277,7 +362,12 @@ export default function App() {
               }}
             />
 
-            {betPopupOpen && <BetPopup onSelect={handlePlaceBid} />}
+            {betPopupOpen && (
+              <BetPopup
+                onSelect={handlePlaceBid}
+                hand={state?.hands?.[yourSeat] || []}
+              />
+            )}
 
             {dashboardOpen && (
               <Dashboard
@@ -291,6 +381,8 @@ export default function App() {
             {isGameOver && (
               <GameOverPopup
                 totalScores={totalScores}
+                seatingNames={seatingNames}
+                gameHistory={gameHistory}
                 onPlayAgain={handlePlayAgain}
               />
             )}

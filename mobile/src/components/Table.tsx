@@ -230,8 +230,12 @@ export const Table: React.FC<TableProps> = ({
     return () => clearTimeout(timer);
   }, [isMyTurn]);
 
+  const allBidsPlaced = Object.values(currentState.bids).every(
+    (b) => (b as number) >= 0
+  );
+
   const legalSet = new Set(
-    isActive
+    isActive && allBidsPlaced
       ? legalMoves(currentState, you).map((c) => `${c.suit}-${c.rank}`)
       : []
   );
