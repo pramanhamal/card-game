@@ -61,7 +61,7 @@ export function initializeGame(): GameState {
     tricksWon: { north: 0, east: 0, south: 0, west: 0 },
     turn,
     round: 1,
-    bids: { north: 0, east: 0, south: 0, west: 0 },
+    bids: { north: -1, east: -1, south: -1, west: -1 },
     spadesBroken: false,
   };
 }
@@ -175,7 +175,11 @@ export function calculateScores(
   for (const pid of SEAT_ORDER) {
     const bid = bids[pid];
     const won = tricksWon[pid];
-    result[pid] = won < bid ? -(10 * bid) : (10 * bid) + (won - bid);
+    if (bid === 0) {
+      result[pid] = won === 0 ? 100 : -100;
+    } else {
+      result[pid] = won < bid ? -(10 * bid) : (10 * bid) + (won - bid);
+    }
   }
   return result;
 }

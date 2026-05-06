@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -42,6 +42,11 @@ export default function App() {
   const [showGameStartPopup, setShowGameStartPopup] = useState(false);
   const [betPopupOpen, setBetPopupOpen] = useState(false);
   const [dashboardOpen, setDashboardOpen] = useState(false);
+
+  // Refs for use inside socket handlers (avoid stale closures)
+  const stateRef = useRef<GameState | null>(null);
+  const yourSeatRef = useRef<PlayerId | null>(null);
+  const betPopupOpenRef = useRef(false);
   const [seatingNames, setSeatingNames] = useState<Record<PlayerId, string>>({
     north: "North",
     east: "East",
@@ -62,6 +67,11 @@ export default function App() {
     resetGame,
     applyServerState,
   } = useGameState();
+
+  // Keep refs in sync with state
+  useEffect(() => { stateRef.current = state; }, [state]);
+  useEffect(() => { yourSeatRef.current = yourSeat; }, [yourSeat]);
+  useEffect(() => { betPopupOpenRef.current = betPopupOpen; }, [betPopupOpen]);
 
   useEffect(() => {
     const sock = io(SERVER_URL, {
@@ -111,6 +121,7 @@ export default function App() {
       }) => {
         setCurrentRoom(payload.room);
         applyServerState(payload.initialGameState);
+        setBetPopupOpen(false);
 
         const seating = payload.seating || {};
         setSeatingNames({
@@ -121,15 +132,40 @@ export default function App() {
         });
 
         setShowGameStartPopup(true);
+        const expectedRound = payload.initialGameState.round;
         setTimeout(() => {
           setShowGameStartPopup(false);
-          setBetPopupOpen(true);
+          // Use live state (stateRef) so AI bids that fired during the
+          // animation are already reflected in the current turn
+          const cur = stateRef.current;
+          const seat = yourSeatRef.current;
+          if (!cur || cur.round !== expectedRound) return;
+          const biddingActive =
+            seat &&
+            cur.turn === seat &&
+            Object.values(cur.bids).some((b) => (b as number) < 0);
+          if (biddingActive && !betPopupOpenRef.current) {
+            setBetPopupOpen(true);
+          }
         }, 1500);
       }
     );
 
+    sock.on("bidding_complete", ({ gameState }: { gameState: GameState }) => {
+      applyServerState(gameState);
+      setBetPopupOpen(false);
+    });
+
     sock.on("game_state_update", (newState: GameState) => {
       applyServerState(newState);
+      // Open bid popup when it becomes this player's turn during bidding
+      const seat = yourSeatRef.current;
+      const isBiddingRound = Object.values(newState.bids).some(
+        (b) => (b as number) < 0
+      );
+      if (seat && newState.turn === seat && isBiddingRound && !betPopupOpenRef.current) {
+        setBetPopupOpen(true);
+      }
     });
 
     return () => {
