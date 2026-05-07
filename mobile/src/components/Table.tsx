@@ -139,7 +139,7 @@ export const Table: React.FC<TableProps> = ({
   nameMap = defaultNameMap,
 }) => {
   const { width, height } = useWindowDimensions();
-  const { trick: serverTrick, round, turn, hands, tricksWon } = currentState;
+  const { trick: serverTrick, round, turn, hands, tricksWon, bids } = currentState;
 
   const [visualTrick, setVisualTrick] = useState(serverTrick);
   const [lastWinner, setLastWinner] = useState<PlayerId | null>(null);
@@ -323,6 +323,7 @@ export const Table: React.FC<TableProps> = ({
         name={nameMap[uiMapping.north as PlayerId]}
         cardsCount={hands[uiMapping.north as PlayerId]?.length ?? 0}
         tricks={tricksWon[uiMapping.north as PlayerId] ?? 0}
+        bid={bids[uiMapping.north as PlayerId] ?? -1}
         isCurrentTurn={turn === uiMapping.north}
       />
       <Opponent
@@ -330,6 +331,7 @@ export const Table: React.FC<TableProps> = ({
         name={nameMap[uiMapping.west as PlayerId]}
         cardsCount={hands[uiMapping.west as PlayerId]?.length ?? 0}
         tricks={tricksWon[uiMapping.west as PlayerId] ?? 0}
+        bid={bids[uiMapping.west as PlayerId] ?? -1}
         isCurrentTurn={turn === uiMapping.west}
       />
       <Opponent
@@ -337,6 +339,7 @@ export const Table: React.FC<TableProps> = ({
         name={nameMap[uiMapping.east as PlayerId]}
         cardsCount={hands[uiMapping.east as PlayerId]?.length ?? 0}
         tricks={tricksWon[uiMapping.east as PlayerId] ?? 0}
+        bid={bids[uiMapping.east as PlayerId] ?? -1}
         isCurrentTurn={turn === uiMapping.east}
       />
 

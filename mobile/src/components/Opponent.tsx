@@ -1,5 +1,5 @@
 import React, { useEffect } from "react";
-import { View, Text, Image, StyleSheet, ViewStyle } from "react-native";
+import { View, Text, StyleSheet, ViewStyle } from "react-native";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -8,7 +8,6 @@ import Animated, {
   withTiming,
   Easing,
 } from "react-native-reanimated";
-import cardImages from "../utils/cardImages";
 
 export type OpponentPosition = "north" | "west" | "east";
 
@@ -16,69 +15,58 @@ interface OpponentProps {
   name: string;
   cardsCount: number;
   tricks: number;
+  bid: number;        // -1 = not yet bid, 0+ = bid placed
   position: OpponentPosition;
-  isAI?: boolean;
   isCurrentTurn?: boolean;
 }
+
+// Soft color per seat
+const AVATAR_COLORS: Record<OpponentPosition, string[]> = {
+  north: ["#1a6fd4", "#1452a8"],
+  west:  ["#7c3aed", "#5b21b6"],
+  east:  ["#0e7c5a", "#065f46"],
+};
 
 export const Opponent: React.FC<OpponentProps> = ({
   name,
   cardsCount,
   tricks,
+  bid,
   position,
-  isAI = false,
   isCurrentTurn = false,
 }) => {
   const pulseScale = useSharedValue(1);
-  const pulseOpacity = useSharedValue(0);
+  const glowOpacity = useSharedValue(0);
 
   useEffect(() => {
     if (isCurrentTurn) {
-      pulseOpacity.value = 0.6;
+      glowOpacity.value = withTiming(1, { duration: 200 });
       pulseScale.value = withRepeat(
         withSequence(
-          withTiming(1.08, { duration: 700, easing: Easing.inOut(Easing.ease) }),
-          withTiming(0.96, { duration: 700, easing: Easing.inOut(Easing.ease) })
+          withTiming(1.07, { duration: 650, easing: Easing.inOut(Easing.ease) }),
+          withTiming(0.97, { duration: 650, easing: Easing.inOut(Easing.ease) })
         ),
         -1,
         true
       );
     } else {
       pulseScale.value = withTiming(1, { duration: 200 });
-      pulseOpacity.value = withTiming(0, { duration: 200 });
+      glowOpacity.value = withTiming(0, { duration: 200 });
     }
   }, [isCurrentTurn]);
 
-  const pulseStyle = useAnimatedStyle(() => ({
+  const animStyle = useAnimatedStyle(() => ({
     transform: [{ scale: pulseScale.value }],
-    opacity: pulseOpacity.value,
   }));
 
-  const displayCount = Math.min(cardsCount, 13);
+  const glowStyle = useAnimatedStyle(() => ({
+    opacity: glowOpacity.value,
+  }));
+
   const isSide = position === "west" || position === "east";
   const initial = name ? name[0].toUpperCase() : "?";
-
-  // Build card fan
-  const renderFan = () => {
-    return Array.from({ length: displayCount }).map((_, i) => {
-      const offset = (i - (displayCount - 1) / 2) * 6;
-      return (
-        <Image
-          key={i}
-          source={cardImages["back-maroon"]}
-          style={[
-            styles.fanCard,
-            {
-              transform: [
-                { rotate: `${offset}deg` },
-                { translateY: -8 },
-              ],
-            },
-          ]}
-        />
-      );
-    });
-  };
+  const [colorTop, colorBot] = AVATAR_COLORS[position];
+  const hasBid = bid >= 0;
 
   const containerStyle: ViewStyle =
     position === "north"
@@ -89,192 +77,198 @@ export const Opponent: React.FC<OpponentProps> = ({
 
   return (
     <View style={[styles.wrapper, containerStyle]}>
-      {/* Pulsing turn ring */}
-      {isCurrentTurn && (
+      <Animated.View style={animStyle}>
+        {/* Glow ring when active */}
         <Animated.View
           style={[
-            styles.turnRing,
-            isSide ? styles.turnRingSide : styles.turnRingNorth,
-            pulseStyle,
+            styles.glowRing,
+            { borderColor: isCurrentTurn ? "#ffd700" : "transparent" },
+            glowStyle,
           ]}
         />
-      )}
 
-      {/* Card fan */}
-      <View
-        style={[
-          styles.fanContainer,
-          isSide ? styles.fanContainerSide : styles.fanContainerNorth,
-          isSide && { transform: [{ rotate: "90deg" }] },
-        ]}
-      >
-        {renderFan()}
-      </View>
+        {/* Main circle */}
+        <View style={[styles.circle, { backgroundColor: colorBot }]}>
+          {/* Inner gradient effect via layered views */}
+          <View style={[styles.circleInner, { backgroundColor: colorTop }]}>
+            {/* Initial */}
+            <Text style={styles.initial}>{initial}</Text>
 
-      {/* Player info pill */}
-      <View
-        style={[
-          styles.pill,
-          isCurrentTurn ? styles.pillActive : styles.pillInactive,
-          { marginTop: isSide ? 0 : 6 },
-        ]}
-      >
-        {/* Avatar circle */}
-        <View
-          style={[
-            styles.avatar,
-            isCurrentTurn ? styles.avatarActive : styles.avatarInactive,
-          ]}
-        >
-          <Text
-            style={[
-              styles.avatarText,
-              { color: isCurrentTurn ? "#1a1a00" : "white" },
-            ]}
-          >
-            {initial}
-          </Text>
+            {/* Bid badge inside circle */}
+            {hasBid ? (
+              <View style={styles.bidBadge}>
+                <Text style={styles.bidLabel}>Call</Text>
+                <Text style={styles.bidValue}>{bid === 0 ? "NIL" : bid}</Text>
+              </View>
+            ) : (
+              /* Card count dots */
+              <View style={styles.cardCountRow}>
+                {Array.from({ length: Math.min(cardsCount, 6) }).map((_, i) => (
+                  <View key={i} style={styles.cardDot} />
+                ))}
+                {cardsCount > 6 && (
+                  <Text style={styles.cardCountExtra}>+{cardsCount - 6}</Text>
+                )}
+              </View>
+            )}
+          </View>
         </View>
 
-        <Text
-          style={[
-            styles.nameText,
-            { color: isCurrentTurn ? "#ffd700" : "rgba(255,255,255,0.9)" },
-          ]}
-          numberOfLines={1}
-        >
-          {name}
-        </Text>
-
-        {isAI && (
-          <View style={styles.botBadge}>
-            <Text style={styles.botText}>Bot</Text>
+        {/* Tricks won badge */}
+        {tricks > 0 && (
+          <View style={styles.tricksBadge}>
+            <Text style={styles.tricksText}>{tricks}✦</Text>
           </View>
         )}
+      </Animated.View>
 
-        <Text style={styles.tricksText}>{tricks}✦</Text>
+      {/* Name banner */}
+      <View
+        style={[
+          styles.nameBanner,
+          isCurrentTurn ? styles.nameBannerActive : styles.nameBannerInactive,
+        ]}
+      >
+        <Text style={styles.nameText} numberOfLines={1}>
+          {name}
+        </Text>
       </View>
     </View>
   );
 };
+
+const CIRCLE_SIZE = 72;
 
 const styles = StyleSheet.create({
   wrapper: {
     position: "absolute",
     alignItems: "center",
     zIndex: 5,
-    pointerEvents: "none",
   } as ViewStyle,
   northContainer: {
-    top: 8,
+    top: 12,
     left: 0,
     right: 0,
     alignSelf: "center",
     alignItems: "center",
-    flexDirection: "column",
   } as ViewStyle,
   westContainer: {
-    left: 8,
-    top: "35%" as any,
+    left: 10,
+    top: "30%" as any,
     alignItems: "center",
   } as ViewStyle,
   eastContainer: {
-    right: 8,
-    top: "35%" as any,
+    right: 10,
+    top: "30%" as any,
     alignItems: "center",
   } as ViewStyle,
-  turnRing: {
+
+  glowRing: {
     position: "absolute",
-    borderWidth: 2,
-    borderColor: "rgba(255, 220, 60, 0.85)",
-    borderRadius: 16,
-    zIndex: -1,
-  },
-  turnRingNorth: {
-    top: -8,
-    bottom: -8,
-    left: -12,
-    right: -12,
-  },
-  turnRingSide: {
     top: -6,
-    bottom: -6,
-    left: -10,
-    right: -10,
+    left: -6,
+    width: CIRCLE_SIZE + 12,
+    height: CIRCLE_SIZE + 12,
+    borderRadius: (CIRCLE_SIZE + 12) / 2,
+    borderWidth: 2.5,
   },
-  fanContainer: {
-    position: "relative",
-  },
-  fanContainerNorth: {
-    width: 90,
-    height: 70,
-  },
-  fanContainerSide: {
-    width: 70,
-    height: 90,
-  },
-  fanCard: {
-    position: "absolute",
-    width: 44,
-    height: 66,
-    borderRadius: 5,
-    left: 23,
-    top: 2,
-  },
-  pill: {
-    marginTop: 6,
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 20,
-    borderWidth: 1,
-  },
-  pillActive: {
-    backgroundColor: "rgba(255,210,40,0.18)",
-    borderColor: "rgba(255,210,40,0.5)",
-  },
-  pillInactive: {
-    backgroundColor: "rgba(0,0,0,0.45)",
-    borderColor: "rgba(255,255,255,0.1)",
-  },
-  avatar: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+  circle: {
+    width: CIRCLE_SIZE,
+    height: CIRCLE_SIZE,
+    borderRadius: CIRCLE_SIZE / 2,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 5,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 6,
+    elevation: 8,
   },
-  avatarActive: {
-    backgroundColor: "rgba(255,210,40,0.7)",
+  circleInner: {
+    width: CIRCLE_SIZE - 6,
+    height: CIRCLE_SIZE - 6,
+    borderRadius: (CIRCLE_SIZE - 6) / 2,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 2,
   },
-  avatarInactive: {
-    backgroundColor: "rgba(255,255,255,0.15)",
+  initial: {
+    fontSize: 20,
+    fontWeight: "900",
+    color: "rgba(255,255,255,0.9)",
+    letterSpacing: 1,
   },
-  avatarText: {
-    fontSize: 11,
+  bidBadge: {
+    alignItems: "center",
+    marginTop: 1,
+  },
+  bidLabel: {
+    fontSize: 8,
+    color: "rgba(255,255,255,0.55)",
+    letterSpacing: 0.5,
+    lineHeight: 9,
+  },
+  bidValue: {
+    fontSize: 13,
     fontWeight: "bold",
-  },
-  nameText: {
-    fontSize: 12,
-    fontWeight: "600",
-    maxWidth: 72,
-  },
-  botBadge: {
-    backgroundColor: "rgba(250,200,0,0.3)",
-    borderRadius: 4,
-    paddingHorizontal: 4,
-    paddingVertical: 1,
-    marginLeft: 4,
-  },
-  botText: {
     color: "#ffd700",
-    fontSize: 10,
+    lineHeight: 14,
+  },
+  cardCountRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 2,
+    justifyContent: "center",
+    marginTop: 3,
+    maxWidth: 36,
+  },
+  cardDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: "rgba(255,255,255,0.45)",
+  },
+  cardCountExtra: {
+    fontSize: 8,
+    color: "rgba(255,255,255,0.6)",
+  },
+  tricksBadge: {
+    position: "absolute",
+    bottom: -4,
+    right: -4,
+    backgroundColor: "rgba(0,0,0,0.7)",
+    borderRadius: 10,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderWidth: 1,
+    borderColor: "rgba(255,210,0,0.5)",
   },
   tricksText: {
-    color: "rgba(255,255,255,0.55)",
+    fontSize: 10,
+    color: "#ffd700",
+    fontWeight: "bold",
+  },
+  nameBanner: {
+    marginTop: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 12,
+    maxWidth: 90,
+  },
+  nameBannerActive: {
+    backgroundColor: "rgba(255,210,40,0.25)",
+    borderWidth: 1,
+    borderColor: "rgba(255,210,40,0.5)",
+  },
+  nameBannerInactive: {
+    backgroundColor: "rgba(0,0,0,0.5)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  nameText: {
     fontSize: 11,
-    marginLeft: 4,
+    fontWeight: "600",
+    color: "white",
+    textAlign: "center",
   },
 });
